@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eval360 Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --green:    #3fb950;
+      --orange:   #d29922;
+      --blue:     #58a6ff;
+      --radius:   8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ---- Nav ---- */
+    nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      height: 56px;
+      gap: 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-title {
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--text);
+      text-decoration: none;
+      letter-spacing: -0.2px;
+    }
+
+    .nav-tabs { display: flex; gap: 4px; }
+
+    .nav-tab {
+      padding: 6px 14px;
+      border-radius: var(--radius);
+      color: var(--muted);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .nav-tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+    .nav-tab.active { color: var(--text); background: rgba(88,166,255,0.12); }
+
+    /* ---- Main ---- */
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    /* ---- Cards grid ---- */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      cursor: pointer;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .card:hover {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 1px rgba(88,166,255,0.2);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .card-name { font-weight: 600; font-size: 15px; }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .badge-training {
+      background: rgba(63,185,80,0.15);
+      color: var(--green);
+      border: 1px solid rgba(63,185,80,0.3);
+    }
+
+    .badge-baseline {
+      background: rgba(210,153,34,0.15);
+      color: var(--orange);
+      border: 1px solid rgba(210,153,34,0.3);
+    }
+
+    .card-meta { color: var(--muted); font-size: 13px; }
+
+    /* ---- Model detail ---- */
+    .detail-header { margin-bottom: 28px; }
+
+    .detail-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .detail-title h1 { font-size: 24px; font-weight: 700; }
+
+    .detail-meta { color: var(--muted); font-size: 13px; }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+
+    .back-link:hover { text-decoration: underline; }
+
+    /* ---- Compare controls ---- */
+    .compare-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+
+    .compare-controls label { color: var(--muted); font-size: 13px; white-space: nowrap; }
+
+    select {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 10px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    select:focus { border-color: var(--blue); }
+
+    .select-multi { min-width: 200px; max-width: 320px; }
+
+    .btn {
+      background: var(--blue);
+      color: #0d1117;
+      border: none;
+      border-radius: var(--radius);
+      padding: 6px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .btn:hover { opacity: 0.85; }
+
+    /* ---- Chart grid ---- */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+
+    @media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+
+    .chart-wrap { position: relative; height: 220px; }
+
+    /* ---- Leaderboard ---- */
+    .leaderboard-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .leaderboard-controls label { color: var(--muted); font-size: 13px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    thead th {
+      background: rgba(255,255,255,0.03);
+      text-align: left;
+      padding: 10px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,0.02); }
+
+    tbody td { padding: 10px 16px; font-size: 13px; vertical-align: middle; }
+
+    .rank-cell { color: var(--muted); font-weight: 600; font-size: 13px; width: 40px; }
+    .score-cell { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    a.model-link { color: var(--blue); text-decoration: none; }
+    a.model-link:hover { text-decoration: underline; }
+
+    /* ---- Utility ---- */
+    .loading { text-align: center; padding: 48px 0; color: var(--muted); }
+
+    .error-msg {
+      background: rgba(248,81,73,0.1);
+      border: 1px solid rgba(248,81,73,0.3);
+      color: #f85149;
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-title" href="#models">Eval360</a>
+  <div class="nav-tabs">
+    <a class="nav-tab" href="#models" data-tab="models">Models</a>
+    <a class="nav-tab" href="#leaderboard" data-tab="leaderboard">Leaderboard</a>
+  </div>
+</nav>
+
+<main id="app">
+  <div class="loading">Loading...</div>
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// Color palette — consistent per model_id
+// ---------------------------------------------------------------------------
+const PALETTE = [
+  '#58a6ff', '#3fb950', '#d29922', '#f78166', '#bc8cff',
+  '#39d353', '#ff7b72', '#79c0ff', '#ffa657', '#56d364',
+];
+const _colorMap = new Map();
+let _colorIdx = 0;
+
+function modelColor(modelId) {
+  if (!_colorMap.has(modelId)) {
+    _colorMap.set(modelId, PALETTE[_colorIdx % PALETTE.length]);
+    _colorIdx++;
+  }
+  return _colorMap.get(modelId);
+}
+
+// ---------------------------------------------------------------------------
+// Active Chart.js instances — destroy before re-render
+// ---------------------------------------------------------------------------
+let _activeCharts = [];
+
+function destroyCharts() {
+  for (const c of _activeCharts) {
+    try { c.destroy(); } catch (_) {}
+  }
+  _activeCharts = [];
+}
+
+// ---------------------------------------------------------------------------
+// API helpers
+// ---------------------------------------------------------------------------
+async function apiFetch(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error('API ' + path + ' returned ' + res.status);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// DOM helpers
+// ---------------------------------------------------------------------------
+function clearNode(node) {
+  while (node.firstChild) node.removeChild(node.firstChild);
+}
+
+function el(tag, attrs, text) {
+  const e = document.createElement(tag);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') e.className = v;
+      else if (k === 'style') e.style.cssText = v;
+      else e.setAttribute(k, v);
+    }
+  }
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function makeBadge(modelType) {
+  return el('span', { class: 'badge badge-' + modelType }, modelType);
+}
+
+function showLoading(app, msg) {
+  clearNode(app);
+  app.appendChild(el('div', { class: 'loading' }, msg || 'Loading...'));
+}
+
+function showError(app, msg) {
+  clearNode(app);
+  app.appendChild(el('div', { class: 'error-msg' }, msg));
+}
+
+// ---------------------------------------------------------------------------
+// Nav / routing
+// ---------------------------------------------------------------------------
+function setActiveTab(tabName) {
+  document.querySelectorAll('.nav-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.tab === tabName);
+  });
+}
+
+async function route() {
+  const hash = location.hash || '#models';
+  const app = document.getElementById('app');
+  destroyCharts();
+
+  if (hash.startsWith('#model/')) {
+    const modelId = decodeURIComponent(hash.slice('#model/'.length));
+    setActiveTab('models');
+    await renderModelDetail(app, modelId);
+  } else if (hash === '#leaderboard') {
+    setActiveTab('leaderboard');
+    await renderLeaderboard(app);
+  } else {
+    setActiveTab('models');
+    await renderModels(app);
+  }
+}
+
+window.addEventListener('hashchange', route);
+window.addEventListener('DOMContentLoaded', route);
+
+// ---------------------------------------------------------------------------
+// View: Models list
+// ---------------------------------------------------------------------------
+async function renderModels(app) {
+  showLoading(app, 'Loading models...');
+  let data;
+  try {
+    data = await apiFetch('/api/models');
+  } catch (e) {
+    showError(app, e.message);
+    return;
+  }
+
+  clearNode(app);
+  const grid = el('div', { class: 'card-grid' });
+
+  for (const m of data.models) {
+    const card = el('div', { class: 'card' });
+
+    const header = el('div', { class: 'card-header' });
+    header.appendChild(el('span', { class: 'card-name' }, m.display_name));
+    header.appendChild(makeBadge(m.model_type));
+
+    const meta = el('div', { class: 'card-meta' });
+    meta.textContent = 'Owner: ' + m.owner + ' \u00b7 ' + m.checkpoint_count + ' checkpoints \u00b7 ' + m.dataset_count + ' datasets';
+
+    card.appendChild(header);
+    card.appendChild(meta);
+
+    card.addEventListener('click', () => {
+      location.hash = '#model/' + encodeURIComponent(m.model_id);
+    });
+
+    grid.appendChild(card);
+  }
+
+  app.appendChild(grid);
+}
+
+// ---------------------------------------------------------------------------
+// View: Model detail
+// ---------------------------------------------------------------------------
+async function renderModelDetail(app, modelId) {
+  showLoading(app, 'Loading model...');
+
+  let modelData, scoresData, allModelsData;
+  try {
+    [modelData, scoresData, allModelsData] = await Promise.all([
+      apiFetch('/api/models/' + encodeURIComponent(modelId)),
+      apiFetch('/api/models/' + encodeURIComponent(modelId) + '/scores'),
+      apiFetch('/api/models'),
+    ]);
+  } catch (e) {
+    showError(app, e.message);
+    return;
+  }
+
+  const { model } = modelData;
+
+  // Assign colors: primary model first so it reliably gets palette[0]
+  modelColor(modelId);
+  for (const m of allModelsData.models) modelColor(m.model_id);
+
+  // Build dataset map from primary scores
+  const primaryScores = scoresData.scores.filter(s => s.is_primary);
+  const datasetMap = new Map();
+  for (const s of primaryScores) {
+    if (!datasetMap.has(s.dataset_name)) datasetMap.set(s.dataset_name, []);
+    datasetMap.get(s.dataset_name).push(s);
+  }
+  for (const pts of datasetMap.values()) {
+    pts.sort((a, b) => (a.training_step == null ? Infinity : a.training_step) - (b.training_step == null ? Infinity : b.training_step));
+  }
+  const datasets = [...datasetMap.keys()].sort();
+
+  clearNode(app);
+
+  // Back link
+  const back = el('a', { class: 'back-link', href: '#models' }, '\u2190 Back to Models');
+  app.appendChild(back);
+
+  // Header
+  const header = el('div', { class: 'detail-header' });
+  const titleRow = el('div', { class: 'detail-title' });
+  titleRow.appendChild(el('h1', null, model.display_name));
+  titleRow.appendChild(makeBadge(model.model_type));
+
+  const cpCount = modelData.checkpoints.length;
+  const metaLine = el('div', { class: 'detail-meta' });
+  metaLine.textContent = 'Owner: ' + model.owner + ' \u00b7 ' + cpCount + ' checkpoints \u00b7 ' + datasets.length + ' datasets';
+
+  header.appendChild(titleRow);
+  header.appendChild(metaLine);
+  app.appendChild(header);
+
+  // Compare controls
+  const compareWrap = el('div', { class: 'compare-controls' });
+  compareWrap.appendChild(el('label', null, 'Compare with...'));
+
+  const compareSelect = document.createElement('select');
+  compareSelect.className = 'select-multi';
+  compareSelect.multiple = true;
+  compareSelect.size = Math.min(6, Math.max(2, allModelsData.models.length - 1));
+
+  for (const m of allModelsData.models) {
+    if (m.model_id === modelId) continue;
+    const opt = document.createElement('option');
+    opt.value = m.model_id;
+    opt.textContent = m.display_name + ' (' + m.model_type + ')';
+    compareSelect.appendChild(opt);
+  }
+
+  const updateBtn = el('button', { class: 'btn' }, 'Update');
+  compareWrap.appendChild(compareSelect);
+  compareWrap.appendChild(updateBtn);
+  app.appendChild(compareWrap);
+
+  // Chart grid
+  const chartGrid = el('div', { class: 'chart-grid' });
+  app.appendChild(chartGrid);
+
+  // Compute x-range of primary model for baseline horizontal lines
+  let allSteps = [];
+  for (const pts of datasetMap.values()) {
+    for (const p of pts) {
+      if (p.training_step != null) allSteps.push(p.training_step);
+    }
+  }
+  const xMin = allSteps.length ? Math.min(...allSteps) : 0;
+  const xMax = allSteps.length ? Math.max(...allSteps) : 1;
+
+  async function renderCharts(compareIds) {
+    destroyCharts();
+    clearNode(chartGrid);
+
+    if (datasets.length === 0) {
+      chartGrid.appendChild(el('div', { class: 'loading' }, 'No eval results found.'));
+      return;
+    }
+
+    // Fetch compare data per dataset if needed
+    let compareByDataset = {};
+    if (compareIds.length > 0) {
+      const allIds = [modelId, ...compareIds].join(',');
+      const results = await Promise.allSettled(
+        datasets.map(ds =>
+          apiFetch('/api/compare?models=' + encodeURIComponent(allIds) + '&dataset=' + encodeURIComponent(ds))
+        )
+      );
+      datasets.forEach((ds, i) => {
+        if (results[i].status === 'fulfilled') compareByDataset[ds] = results[i].value;
+      });
+    }
+
+    for (const dsName of datasets) {
+      const pts = datasetMap.get(dsName) || [];
+
+      const card = el('div', { class: 'chart-card' });
+      card.appendChild(el('h3', null, dsName));
+
+      const wrap = el('div', { class: 'chart-wrap' });
+      const canvas = document.createElement('canvas');
+      wrap.appendChild(canvas);
+      card.appendChild(wrap);
+      chartGrid.appendChild(card);
+
+      const chartDatasets = [];
+
+      if (compareIds.length > 0 && compareByDataset[dsName]) {
+        for (const mEntry of compareByDataset[dsName].models) {
+          const color = modelColor(mEntry.model_id);
+          if (mEntry.model_type === 'baseline') {
+            const val = mEntry.data_points[0] != null ? mEntry.data_points[0].metric_value : null;
+            if (val == null) continue;
+            chartDatasets.push({
+              label: mEntry.display_name,
+              data: [{ x: xMin, y: val }, { x: xMax, y: val }],
+              borderColor: color,
+              backgroundColor: color + '33',
+              borderDash: [6, 4],
+              borderWidth: 2,
+              pointRadius: 0,
+              pointHoverRadius: 4,
+              tension: 0,
+            });
+          } else {
+            chartDatasets.push({
+              label: mEntry.display_name,
+              data: mEntry.data_points.map(p => ({ x: p.training_step, y: p.metric_value })),
+              borderColor: color,
+              backgroundColor: color + '33',
+              borderWidth: 2,
+              pointRadius: 3,
+              pointHoverRadius: 5,
+              tension: 0.3,
+            });
+          }
+        }
+      } else {
+        const color = modelColor(modelId);
+        chartDatasets.push({
+          label: model.display_name,
+          data: pts.map(p => ({ x: p.training_step, y: p.metric_value })),
+          borderColor: color,
+          backgroundColor: color + '33',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.3,
+        });
+      }
+
+      const chart = new Chart(canvas, {
+        type: 'line',
+        data: { datasets: chartDatasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: {
+              type: 'linear',
+              ticks: { color: '#8b949e', maxTicksLimit: 6 },
+              grid: { color: '#30363d' },
+            },
+            y: {
+              min: 0,
+              max: 1,
+              ticks: { color: '#8b949e', maxTicksLimit: 6 },
+              grid: { color: '#30363d' },
+            },
+          },
+          plugins: {
+            legend: {
+              labels: { color: '#e6edf3', boxWidth: 14, font: { size: 12 } },
+            },
+            tooltip: {
+              callbacks: {
+                label(ctx) {
+                  const raw = ctx.raw;
+                  const val = typeof raw.y === 'number' ? raw.y.toFixed(4) : '?';
+                  const stepStr = raw.x != null ? ' (step ' + raw.x + ')' : '';
+                  return ctx.dataset.label + ': ' + val + stepStr;
+                },
+              },
+              backgroundColor: '#161b22',
+              borderColor: '#30363d',
+              borderWidth: 1,
+              titleColor: '#e6edf3',
+              bodyColor: '#8b949e',
+            },
+          },
+        },
+      });
+
+      _activeCharts.push(chart);
+    }
+  }
+
+  await renderCharts([]);
+
+  updateBtn.addEventListener('click', async () => {
+    const selected = Array.from(compareSelect.selectedOptions).map(o => o.value);
+    await renderCharts(selected);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// View: Leaderboard
+// ---------------------------------------------------------------------------
+async function renderLeaderboard(app) {
+  showLoading(app, 'Loading filters...');
+  let filtersData;
+  try {
+    filtersData = await apiFetch('/api/filters');
+  } catch (e) {
+    showError(app, e.message);
+    return;
+  }
+
+  clearNode(app);
+
+  const controls = el('div', { class: 'leaderboard-controls' });
+  controls.appendChild(el('label', null, 'Dataset:'));
+
+  const dsSelect = document.createElement('select');
+  for (const ds of filtersData.datasets) {
+    const opt = document.createElement('option');
+    opt.value = ds;
+    opt.textContent = ds;
+    dsSelect.appendChild(opt);
+  }
+  controls.appendChild(dsSelect);
+  app.appendChild(controls);
+
+  const tableWrap = el('div', null);
+  app.appendChild(tableWrap);
+
+  async function loadLeaderboard(dsName) {
+    clearNode(tableWrap);
+    tableWrap.appendChild(el('div', { class: 'loading' }, 'Loading leaderboard...'));
+    let data;
+    try {
+      data = await apiFetch('/api/datasets/' + encodeURIComponent(dsName) + '/leaderboard');
+    } catch (e) {
+      clearNode(tableWrap);
+      tableWrap.appendChild(el('div', { class: 'error-msg' }, e.message));
+      return;
+    }
+
+    clearNode(tableWrap);
+    const table = document.createElement('table');
+
+    const thead = document.createElement('thead');
+    const hRow = document.createElement('tr');
+    for (const col of ['#', 'Model', 'Type', 'Score', 'Checkpoint', 'Step']) {
+      hRow.appendChild(el('th', null, col));
+    }
+    thead.appendChild(hRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    data.leaderboard.forEach((entry, idx) => {
+      const tr = document.createElement('tr');
+
+      const rankTd = el('td', { class: 'rank-cell' }, String(idx + 1));
+      tr.appendChild(rankTd);
+
+      const nameTd = document.createElement('td');
+      const nameLink = el('a', { class: 'model-link', href: '#model/' + encodeURIComponent(entry.model_id) }, entry.display_name);
+      nameTd.appendChild(nameLink);
+      tr.appendChild(nameTd);
+
+      const typeTd = document.createElement('td');
+      typeTd.appendChild(makeBadge(entry.model_type));
+      tr.appendChild(typeTd);
+
+      const scoreVal = typeof entry.metric_value === 'number' ? entry.metric_value.toFixed(4) : String(entry.metric_value);
+      tr.appendChild(el('td', { class: 'score-cell' }, scoreVal));
+
+      const cpTd = el('td', { style: 'color:var(--muted);font-family:monospace;font-size:12px' }, entry.checkpoint_id);
+      tr.appendChild(cpTd);
+
+      const stepVal = entry.training_step != null ? String(entry.training_step) : '\u2014';
+      tr.appendChild(el('td', { style: 'color:var(--muted)' }, stepVal));
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+  }
+
+  dsSelect.addEventListener('change', () => loadLeaderboard(dsSelect.value));
+
+  if (filtersData.datasets.length > 0) {
+    await loadLeaderboard(filtersData.datasets[0]);
+  } else {
+    tableWrap.appendChild(el('div', { class: 'loading' }, 'No datasets available.'));
+  }
+}
+</script>
+</body>
+</html>
