@@ -1,0 +1,14 @@
+[Unit]
+Description=Eval360 Dashboard Viewer
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/eval360/env
+ExecStart=%h/.config/eval360/venv/bin/python %h/GitHub/eval360-snapshots/viewer/server.py --port 11001
+WorkingDirectory=%h/GitHub/eval360-snapshots/viewer
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
