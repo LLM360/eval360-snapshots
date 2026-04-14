@@ -108,19 +108,21 @@ If ingest stops working and the scheduler reports HTTP 302, check that the Bypas
 
 ## Eval360-V2 auto-ingest
 
-To enable dashboard logging for a model, add `dashboard_logging: true` to the model config YAML:
+Enable dashboard logging via CLI flags when running eval:
 
-```yaml
-remote_model:
-  base_name: k2-think-v2
-  path: LLM360/K2-Think-V2
-# ... other fields ...
-dashboard_logging: true   # opt-in to eval360 dashboard
+```bash
+eval360 --max-generation-jobs 1 --max-grading-parallelism 20 \
+  evaluate-now \
+  --model-paths model.yaml \
+  --data-paths data.yaml \
+  --dashboard-logging \
+  --dashboard-logging-examples    # optional: also log per-example results
 ```
 
-That's it. When grading completes, the scheduler automatically POSTs scores to the dashboard. No env vars needed — the dashboard URL and token are read from a shared config file on Weka (`/mnt/weka/shrd/k2m/eval360/dashboard.env`).
+- `--dashboard-logging` — POST aggregate scores to the dashboard after grading
+- `--dashboard-logging-examples` — also POST per-example results (input/output previews, correctness, slice labels)
 
-By default, `dashboard_logging` is `false` — models that don't set it won't log to the dashboard.
+No env vars needed — the dashboard URL and token are read from a shared config file on Weka (`/mnt/weka/shrd/k2m/eval360/dashboard.env`).
 
 The hook is implemented in `scheduler/dashboard_hook.py` in the [Eval360-V2 repo](https://github.com/LLM360/Eval360-V2).
 
@@ -157,20 +159,40 @@ python viewer/backfill.py \
 
 ## API endpoints
 
+### Query
 | Endpoint | Description |
 |----------|-------------|
 | `GET /` | Dashboard UI |
 | `GET /api/models` | List all models (filters: `model_type`, `owner`) |
 | `GET /api/models/{id}` | Model detail + checkpoints |
-| `GET /api/models/{id}/scores` | All eval results for a model |
-| `GET /api/models/{id}/diagnosis` | Gap analysis vs baselines + trend indicators |
+| `GET /api/models/{id}/scores` | All eval results (with CIs) for a model |
+| `GET /api/models/{id}/diagnosis` | Gap analysis, significance, trends, best checkpoints |
 | `GET /api/checkpoints/{id}` | Checkpoint detail + results |
 | `GET /api/datasets` | List dataset names |
 | `GET /api/datasets/{name}/leaderboard` | Ranked by best primary metric |
-| `GET /api/heatmap` | All models × all datasets matrix |
-| `GET /api/compare` | Multi-model comparison (`models`, `dataset` params) |
+| `GET /api/heatmap` | Models × datasets matrix with status + coverage + categories |
+| `GET /api/compare` | Multi-model comparison (supports `?common_only=true`) |
 | `GET /api/filters` | Distinct values for dropdowns |
-| `POST /api/ingest/eval-result` | Ingest scores (requires Bearer token) |
+| `GET /api/suites` | List evaluation suites |
+| `GET /api/suites/{id}/heatmap` | Suite-filtered heatmap |
+| `GET /api/eval-runs/{id}` | Eval run provenance details |
+| `GET /api/eval-runs/{id}/examples` | Paginated examples (filters: `correct`, `topic`, `difficulty`) |
+| `GET /api/eval-runs/{id}/slices` | Slice analysis by topic + difficulty |
+
+### Ingest (requires Bearer token)
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/ingest/eval-result` | Ingest scores with provenance |
+| `POST /api/ingest/examples` | Bulk ingest example-level results |
+
+### Admin (requires Bearer token)
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/admin/suites` | Create/update evaluation suite |
+| `POST /api/admin/benchmark-metadata` | Bulk update benchmark categories |
+| `PATCH /api/models/{id}` | Update model metadata (param_count, is_pinned) |
+| `DELETE /api/models/{id}` | Delete model + all data (cascading) |
+| `DELETE /api/checkpoints/{id}` | Delete checkpoint + results (cascading) |
 
 ## Related
 

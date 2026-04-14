@@ -720,6 +720,138 @@ async def get_model_diagnosis(model_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Phase 4: Example-level drill-down
+# ---------------------------------------------------------------------------
+
+class IngestExamplesPayload(BaseModel):
+    eval_run_id: str
+    examples: list[dict]
+
+
+@app.post("/api/ingest/examples")
+async def ingest_examples(body: IngestExamplesPayload, _=Depends(verify_ingest_token)):
+    count = await db.bulk_insert_examples(body.eval_run_id, body.examples)
+    return {"ok": True, "eval_run_id": body.eval_run_id, "count": count}
+
+
+@app.get("/api/eval-runs/{eval_run_id}/examples")
+async def get_examples(
+    eval_run_id: str,
+    correct: bool | None = Query(None),
+    topic: str | None = Query(None),
+    difficulty: str | None = Query(None),
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Paginated example browser with filters."""
+    conditions = ["eval_run_id = $1"]
+    params: list[Any] = [eval_run_id]
+    idx = 2
+
+    if correct is not None:
+        conditions.append(f"correct = ${idx}")
+        params.append(correct)
+        idx += 1
+    if topic is not None:
+        conditions.append(f"topic = ${idx}")
+        params.append(topic)
+        idx += 1
+    if difficulty is not None:
+        conditions.append(f"difficulty = ${idx}")
+        params.append(difficulty)
+        idx += 1
+
+    where = "WHERE " + " AND ".join(conditions)
+
+    # Summary counts (respecting filters)
+    total = await db.fetchval(f"SELECT COUNT(*) FROM example_results {where}", *params)
+    correct_count = await db.fetchval(
+        f"SELECT COUNT(*) FROM example_results {where} AND correct = TRUE", *params
+    )
+
+    # Paginated rows
+    rows = await db.fetch(
+        f"""
+        SELECT id, eval_run_id, example_idx, correct, input_preview, output_preview,
+               ground_truth, error_tag, difficulty, topic, subtask, metadata
+        FROM example_results
+        {where}
+        ORDER BY example_idx
+        LIMIT ${idx} OFFSET ${idx + 1}
+        """,
+        *params, limit, offset,
+    )
+
+    accuracy = round(correct_count / total, 4) if total > 0 else None
+    return {
+        "eval_run_id": eval_run_id,
+        "total": total,
+        "correct_count": correct_count,
+        "accuracy": accuracy,
+        "examples": [dict(r) for r in rows],
+    }
+
+
+@app.get("/api/eval-runs/{eval_run_id}/slices")
+async def get_slices(eval_run_id: str):
+    """Aggregate breakdown by topic and difficulty."""
+    # By topic
+    topic_rows = await db.fetch(
+        """
+        SELECT topic, COUNT(*) as total, SUM(CASE WHEN correct THEN 1 ELSE 0 END) as correct_count
+        FROM example_results WHERE eval_run_id = $1 AND topic IS NOT NULL GROUP BY topic ORDER BY topic
+        """,
+        eval_run_id,
+    )
+    by_topic = {}
+    for r in topic_rows:
+        t = r["total"]
+        c = r["correct_count"]
+        by_topic[r["topic"]] = {"total": t, "correct": c, "accuracy": round(c / t, 4) if t > 0 else None}
+
+    # By difficulty
+    diff_rows = await db.fetch(
+        """
+        SELECT difficulty, COUNT(*) as total, SUM(CASE WHEN correct THEN 1 ELSE 0 END) as correct_count
+        FROM example_results WHERE eval_run_id = $1 AND difficulty IS NOT NULL GROUP BY difficulty ORDER BY difficulty
+        """,
+        eval_run_id,
+    )
+    by_difficulty = {}
+    for r in diff_rows:
+        t = r["total"]
+        c = r["correct_count"]
+        by_difficulty[r["difficulty"]] = {"total": t, "correct": c, "accuracy": round(c / t, 4) if t > 0 else None}
+
+    # Error concentration: top 2-3 slices with lowest accuracy that have >5 examples
+    all_slices = []
+    for name, info in by_topic.items():
+        if info["total"] > 5 and info["accuracy"] is not None:
+            failures = info["total"] - info["correct"]
+            all_slices.append((f"{name}", failures, info["total"], info["accuracy"]))
+    for name, info in by_difficulty.items():
+        if info["total"] > 5 and info["accuracy"] is not None:
+            failures = info["total"] - info["correct"]
+            all_slices.append((f"{name} difficulty", failures, info["total"], info["accuracy"]))
+
+    all_slices.sort(key=lambda x: x[3])  # sort by accuracy ascending (worst first)
+    top_slices = all_slices[:3]
+
+    if top_slices:
+        parts = [f"{s[0]} ({s[1]}/{s[2]} failures)" for s in top_slices]
+        error_concentration = "Failures concentrated in: " + ", ".join(parts)
+    else:
+        error_concentration = ""
+
+    return {
+        "eval_run_id": eval_run_id,
+        "by_topic": by_topic,
+        "by_difficulty": by_difficulty,
+        "error_concentration": error_concentration,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Filters (for dropdowns)
 # ---------------------------------------------------------------------------
 

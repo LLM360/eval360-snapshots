@@ -206,3 +206,39 @@ async def update_model_metadata(model_id: str, updates: dict) -> None:
         return
     params.append(model_id)
     await execute(f"UPDATE models SET {', '.join(sets)} WHERE model_id = ${idx}", *params)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Example-level results
+# ---------------------------------------------------------------------------
+
+async def bulk_insert_examples(eval_run_id: str, examples: list[dict]) -> int:
+    """Insert example results in bulk. Returns count inserted."""
+    rows = []
+    for ex in examples:
+        rows.append((
+            eval_run_id, ex["example_idx"], ex.get("correct"),
+            ex.get("input_preview"), ex.get("output_preview"),
+            ex.get("ground_truth"), ex.get("error_tag"),
+            ex.get("difficulty"), ex.get("topic"),
+            ex.get("subtask"), json.dumps(ex.get("metadata", {})),
+        ))
+    await pool().executemany(
+        """
+        INSERT INTO example_results (eval_run_id, example_idx, correct, input_preview, output_preview,
+                                     ground_truth, error_tag, difficulty, topic, subtask, metadata)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        ON CONFLICT (eval_run_id, example_idx) DO UPDATE SET
+            correct = EXCLUDED.correct,
+            input_preview = EXCLUDED.input_preview,
+            output_preview = EXCLUDED.output_preview,
+            ground_truth = EXCLUDED.ground_truth,
+            error_tag = EXCLUDED.error_tag,
+            difficulty = EXCLUDED.difficulty,
+            topic = EXCLUDED.topic,
+            subtask = EXCLUDED.subtask,
+            metadata = EXCLUDED.metadata
+        """,
+        rows,
+    )
+    return len(rows)
