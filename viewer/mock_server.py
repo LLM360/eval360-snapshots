@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 MODELS: list[dict] = []
 CHECKPOINTS: list[dict] = []
 EVAL_RESULTS: list[dict] = []
+EVAL_RUNS: list[dict] = []
 
 # Realistic model definitions
 TRAINING_MODELS = [
@@ -78,9 +79,42 @@ def _training_score(base: float, ceiling: float, step: int, total_steps: int) ->
     return max(0.0, min(1.0, round(expected + noise, 4)))
 
 
+# Grader type per dataset (used in seed eval_runs)
+_DATASET_GRADER = {
+    "bbh": "exact_match",
+    "math500": "math_verify",
+    "humaneval": "execution",
+    "ifeval": "rule_based",
+    "gsm8k": "exact_match",
+    "arc_challenge": "exact_match",
+    "mmlu_pro": "exact_match",
+    "mbpp": "execution",
+}
+
+# Sample count per dataset
+_DATASET_SAMPLES = {
+    "bbh": 250,
+    "math500": 500,
+    "humaneval": 164,
+    "ifeval": 541,
+    "gsm8k": 1319,
+    "arc_challenge": 1172,
+    "mmlu_pro": 500,
+    "mbpp": 374,
+}
+
+
 def seed_data():
     """Populate the mock data store with realistic eval results."""
     random.seed(42)
+
+    # Track which (cp_id, ds_name) pairs will be pending/failed instead of completed
+    # We'll assign these after building the full list of training combos
+    pending_runs: set[tuple[str, str]] = set()
+    failed_runs: dict[tuple[str, str], str] = {}
+
+    # We need a stable selection; pick after the loop by recording all combos first
+    training_combos: list[tuple[str, str]] = []
 
     for m in TRAINING_MODELS:
         MODELS.append({
@@ -95,20 +129,86 @@ def seed_data():
                 "training_step": step, "checkpoint_path": f"/checkpoints/{m['model_id']}/step-{step}",
                 "metadata": {}, "created_at": _now(),
             })
+            for ds_name in DATASETS:
+                training_combos.append((cp_id, ds_name))
+
+    # Choose 2 pending and 1 failed from later-step checkpoints (not step-1000 to keep early
+    # steps fully populated for a cleaner training curve).
+    rng = random.Random(99)
+    eligible = [(cp, ds) for cp, ds in training_combos if "step-5000" in cp or "step-4000" in cp]
+    chosen = rng.sample(eligible, min(3, len(eligible)))
+    pending_runs = {chosen[0], chosen[1]}
+    failed_runs = {chosen[2]: "OOM during grading: CUDA out of memory on rank 0"}
+
+    # Now emit EVAL_RESULTS and EVAL_RUNS for training models
+    # Re-seed so the score values are identical to the original seeding order
+    random.seed(42)
+    for m in TRAINING_MODELS:
+        for step_idx in range(m["steps"]):
+            step = (step_idx + 1) * 1000
+            cp_id = f"{m['model_id']}__step-{step}"
             for ds_name, ds_info in DATASETS.items():
                 primary_val = _training_score(ds_info["base"], ds_info["ceiling"], step_idx, m["steps"])
-                EVAL_RESULTS.append({
-                    "checkpoint_id": cp_id, "dataset_name": ds_name,
-                    "metric_name": ds_info["primary"], "metric_value": primary_val,
-                    "is_primary": True, "eval_config": {}, "ingested_at": _now(),
-                })
-                for extra_name, offset in ds_info.get("extra", {}).items():
+                key = (cp_id, ds_name)
+                run_id = f"{cp_id}__{ds_name}"
+
+                if key in pending_runs:
+                    # pending: eval_run exists but no eval_result
+                    EVAL_RUNS.append({
+                        "eval_run_id": run_id,
+                        "checkpoint_id": cp_id,
+                        "dataset_name": ds_name,
+                        "status": "pending",
+                        "grader_type": _DATASET_GRADER.get(ds_name, "exact_match"),
+                        "sample_count": _DATASET_SAMPLES.get(ds_name, 30),
+                        "inference_config": {"temperature": 0.0},
+                        "dataset_version": "1.0.0",
+                        "dataset_split": "test",
+                        "ingested_at": _now(),
+                    })
+                elif key in failed_runs:
+                    # failed: eval_run exists but no eval_result
+                    EVAL_RUNS.append({
+                        "eval_run_id": run_id,
+                        "checkpoint_id": cp_id,
+                        "dataset_name": ds_name,
+                        "status": "failed",
+                        "error_message": failed_runs[key],
+                        "grader_type": _DATASET_GRADER.get(ds_name, "exact_match"),
+                        "sample_count": _DATASET_SAMPLES.get(ds_name, 30),
+                        "inference_config": {"temperature": 0.0},
+                        "dataset_version": "1.0.0",
+                        "dataset_split": "test",
+                        "ingested_at": _now(),
+                    })
+                else:
+                    # completed: both eval_run and eval_result
+                    EVAL_RUNS.append({
+                        "eval_run_id": run_id,
+                        "checkpoint_id": cp_id,
+                        "dataset_name": ds_name,
+                        "status": "completed",
+                        "grader_type": _DATASET_GRADER.get(ds_name, "exact_match"),
+                        "sample_count": _DATASET_SAMPLES.get(ds_name, 30),
+                        "inference_config": {"temperature": 0.0},
+                        "dataset_version": "1.0.0",
+                        "dataset_split": "test",
+                        "ingested_at": _now(),
+                    })
                     EVAL_RESULTS.append({
                         "checkpoint_id": cp_id, "dataset_name": ds_name,
-                        "metric_name": extra_name,
-                        "metric_value": round(min(1.0, primary_val + offset + random.gauss(0, 0.005)), 4),
-                        "is_primary": False, "eval_config": {}, "ingested_at": _now(),
+                        "metric_name": ds_info["primary"], "metric_value": primary_val,
+                        "is_primary": True, "eval_config": {}, "eval_run_id": run_id,
+                        "ingested_at": _now(),
                     })
+                    for extra_name, offset in ds_info.get("extra", {}).items():
+                        EVAL_RESULTS.append({
+                            "checkpoint_id": cp_id, "dataset_name": ds_name,
+                            "metric_name": extra_name,
+                            "metric_value": round(min(1.0, primary_val + offset + random.gauss(0, 0.005)), 4),
+                            "is_primary": False, "eval_config": {}, "eval_run_id": run_id,
+                            "ingested_at": _now(),
+                        })
 
     for m in BASELINE_MODELS:
         MODELS.append({
@@ -123,10 +223,24 @@ def seed_data():
         })
         for ds_name, score in BASELINE_SCORES[m["model_id"]].items():
             ds_info = DATASETS[ds_name]
+            run_id = f"{cp_id}__{ds_name}"
+            EVAL_RUNS.append({
+                "eval_run_id": run_id,
+                "checkpoint_id": cp_id,
+                "dataset_name": ds_name,
+                "status": "completed",
+                "grader_type": _DATASET_GRADER.get(ds_name, "exact_match"),
+                "sample_count": _DATASET_SAMPLES.get(ds_name, 30),
+                "inference_config": {"temperature": 0.0},
+                "dataset_version": "1.0.0",
+                "dataset_split": "test",
+                "ingested_at": _now(),
+            })
             EVAL_RESULTS.append({
                 "checkpoint_id": cp_id, "dataset_name": ds_name,
                 "metric_name": ds_info["primary"], "metric_value": score,
-                "is_primary": True, "eval_config": {}, "ingested_at": _now(),
+                "is_primary": True, "eval_config": {}, "eval_run_id": run_id,
+                "ingested_at": _now(),
             })
 
 
@@ -251,7 +365,8 @@ async def compare_models(
 
 @app.get("/api/heatmap")
 async def get_heatmap():
-    datasets = sorted({e["dataset_name"] for e in EVAL_RESULTS if e["is_primary"]})
+    datasets = sorted({e["dataset_name"] for e in EVAL_RESULTS if e["is_primary"]}
+                      | {r["dataset_name"] for r in EVAL_RUNS})
     models_out = []
     matrix = {}
     seen = set()
@@ -267,14 +382,39 @@ async def get_heatmap():
             "model_type": m["model_type"], "owner": m["owner"],
         })
         cp_ids = {c["checkpoint_id"] for c in CHECKPOINTS if c["model_id"] == mid}
-        best = {}
+        # best completed result per dataset: (score, eval_run_id)
+        best: dict[str, tuple[float, str]] = {}
         for e in EVAL_RESULTS:
             if e["checkpoint_id"] in cp_ids and e["is_primary"]:
                 ds = e["dataset_name"]
-                if ds not in best or e["metric_value"] > best[ds]:
-                    best[ds] = e["metric_value"]
-        matrix[mid] = {ds: round(v, 4) for ds, v in best.items()}
+                run_id = e.get("eval_run_id", "")
+                if ds not in best or e["metric_value"] > best[ds][0]:
+                    best[ds] = (e["metric_value"], run_id)
+        # collect non-completed runs (pending/failed) that have no completed result
+        non_completed: dict[str, dict] = {}
+        for r in EVAL_RUNS:
+            if r["checkpoint_id"] in cp_ids and r["status"] != "completed":
+                ds = r["dataset_name"]
+                if ds not in best:
+                    # last-write wins for non-completed; prefer failed over pending for display
+                    existing = non_completed.get(ds)
+                    if existing is None or r["status"] == "failed":
+                        non_completed[ds] = r
+        cell: dict[str, dict] = {}
+        for ds, (score, run_id) in best.items():
+            cell[ds] = {"score": round(score, 4), "status": "completed", "eval_run_id": run_id}
+        for ds, r in non_completed.items():
+            cell[ds] = {"score": None, "status": r["status"], "eval_run_id": r["eval_run_id"]}
+        matrix[mid] = cell
     return {"models": models_out, "datasets": datasets, "matrix": matrix}
+
+
+@app.get("/api/eval-runs/{eval_run_id}")
+async def get_eval_run(eval_run_id: str):
+    run = next((r for r in EVAL_RUNS if r["eval_run_id"] == eval_run_id), None)
+    if not run:
+        return JSONResponse({"error": "Eval run not found"}, status_code=404)
+    return run
 
 
 @app.get("/api/models/{model_id}/diagnosis")
@@ -349,12 +489,50 @@ async def get_model_diagnosis(model_id: str):
             "trend": compute_trend(recent_by_ds.get(ds, [])),
         }
 
+    # best_overall_step: checkpoint with highest average primary metric across all datasets
+    cp_avgs: dict[str, float] = {}
+    for cp in cps:
+        if cp["training_step"] is None:
+            continue
+        vals = [e["metric_value"] for e in EVAL_RESULTS
+                if e["checkpoint_id"] == cp["checkpoint_id"] and e["is_primary"]]
+        if vals:
+            cp_avgs[cp["checkpoint_id"]] = sum(vals) / len(vals)
+    best_overall_cp_id = max(cp_avgs, key=cp_avgs.__getitem__) if cp_avgs else None
+    best_overall_step = next(
+        (c["training_step"] for c in cps if c["checkpoint_id"] == best_overall_cp_id), None
+    )
+
+    # best_per_dataset: dataset_name → best training_step
+    best_per_dataset: dict[str, int | None] = {}
+    for cp in cps:
+        if cp["training_step"] is None:
+            continue
+        for e in EVAL_RESULTS:
+            if e["checkpoint_id"] == cp["checkpoint_id"] and e["is_primary"]:
+                ds = e["dataset_name"]
+                cur_best_step = best_per_dataset.get(ds)
+                if cur_best_step is None:
+                    best_per_dataset[ds] = cp["training_step"]
+                else:
+                    # compare score for this ds at cur_best vs this step
+                    cur_best_score = next(
+                        (ev["metric_value"] for ev in EVAL_RESULTS
+                         if ev["checkpoint_id"] == f"{model_id}__step-{cur_best_step}"
+                         and ev["dataset_name"] == ds and ev["is_primary"]),
+                        None,
+                    )
+                    if cur_best_score is None or e["metric_value"] > cur_best_score:
+                        best_per_dataset[ds] = cp["training_step"]
+
     return {
         "model_id": model_id,
         "display_name": model["display_name"],
         "model_type": model["model_type"],
         "latest_checkpoint": latest_cp["checkpoint_id"],
         "latest_step": latest_cp["training_step"],
+        "best_overall_step": best_overall_step,
+        "best_per_dataset": best_per_dataset,
         "scores": scores,
     }
 
@@ -370,11 +548,12 @@ async def get_filter_options():
 
 @app.delete("/api/models/{model_id}")
 async def delete_model(model_id: str):
-    global MODELS, CHECKPOINTS, EVAL_RESULTS
+    global MODELS, CHECKPOINTS, EVAL_RESULTS, EVAL_RUNS
     if not any(m["model_id"] == model_id for m in MODELS):
         return JSONResponse({"error": "Model not found"}, status_code=404)
     cp_ids = {c["checkpoint_id"] for c in CHECKPOINTS if c["model_id"] == model_id}
     EVAL_RESULTS = [e for e in EVAL_RESULTS if e["checkpoint_id"] not in cp_ids]
+    EVAL_RUNS = [r for r in EVAL_RUNS if r["checkpoint_id"] not in cp_ids]
     CHECKPOINTS = [c for c in CHECKPOINTS if c["model_id"] != model_id]
     MODELS = [m for m in MODELS if m["model_id"] != model_id]
     return {"ok": True, "deleted": model_id}
@@ -382,10 +561,11 @@ async def delete_model(model_id: str):
 
 @app.delete("/api/checkpoints/{checkpoint_id}")
 async def delete_checkpoint(checkpoint_id: str):
-    global CHECKPOINTS, EVAL_RESULTS
+    global CHECKPOINTS, EVAL_RESULTS, EVAL_RUNS
     if not any(c["checkpoint_id"] == checkpoint_id for c in CHECKPOINTS):
         return JSONResponse({"error": "Checkpoint not found"}, status_code=404)
     EVAL_RESULTS = [e for e in EVAL_RESULTS if e["checkpoint_id"] != checkpoint_id]
+    EVAL_RUNS = [r for r in EVAL_RUNS if r["checkpoint_id"] != checkpoint_id]
     CHECKPOINTS = [c for c in CHECKPOINTS if c["checkpoint_id"] != checkpoint_id]
     return {"ok": True, "deleted": checkpoint_id}
 
@@ -398,7 +578,8 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     seed_data()
-    logger.info("Seeded %d models, %d checkpoints, %d eval results", len(MODELS), len(CHECKPOINTS), len(EVAL_RESULTS))
+    logger.info("Seeded %d models, %d checkpoints, %d eval results, %d eval runs",
+                len(MODELS), len(CHECKPOINTS), len(EVAL_RESULTS), len(EVAL_RUNS))
     uvicorn.run(app, host=args.host, port=args.port)
 
 
