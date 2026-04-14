@@ -10,6 +10,7 @@ Usage:
 import argparse
 import json
 import logging
+import math
 import os
 import uuid
 from pathlib import Path
@@ -101,6 +102,10 @@ class IngestEvalResultPayload(BaseModel):
     error_message: str | None = None
     training_run: str | None = None
     recipe_tags: list[str] = []
+    # Phase 2: confidence interval fields
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    stderr: float | None = None
 
 
 @app.post("/api/ingest/eval-result")
@@ -146,6 +151,18 @@ async def ingest_eval_result(body: IngestEvalResultPayload, _=Depends(verify_ing
     # 4. Upsert eval results, linking each to the eval_run
     primary = body.primary_metric or next(iter(body.metrics), None)
     for metric_name, metric_value in body.metrics.items():
+        ci_lo = body.ci_lower
+        ci_hi = body.ci_upper
+        se = body.stderr
+        sample_n = body.sample_count if hasattr(body, 'sample_count') else None
+
+        # Server-side CI fallback for proportion metrics
+        if ci_lo is None and sample_n and 0 <= metric_value <= 1 and sample_n > 0:
+            se = math.sqrt(metric_value * (1 - metric_value) / sample_n)
+            ci_lo = max(0.0, round(metric_value - 1.96 * se, 6))
+            ci_hi = min(1.0, round(metric_value + 1.96 * se, 6))
+            se = round(se, 6)
+
         await db.upsert_eval_result({
             "checkpoint_id": body.checkpoint_id,
             "dataset_name": body.dataset_name,
@@ -155,6 +172,9 @@ async def ingest_eval_result(body: IngestEvalResultPayload, _=Depends(verify_ing
             "eval_config": body.eval_config,
             "eval_run_id": eval_run_id,
             "sample_count": body.sample_count,
+            "ci_lower": ci_lo,
+            "ci_upper": ci_hi,
+            "stderr": se,
         })
 
     return {"ok": True, "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name, "eval_run_id": eval_run_id}
@@ -318,6 +338,7 @@ async def get_leaderboard(dataset_name: str):
 async def compare_models(
     models: str = Query(..., description="Comma-separated model_ids"),
     dataset: str = Query(..., description="Single dataset name"),
+    common_only: bool = Query(False),
 ):
     model_ids = [m.strip() for m in models.split(",") if m.strip()]
     if not model_ids:
@@ -357,6 +378,13 @@ async def compare_models(
             "training_step": r["training_step"],
             "metric_value": r["metric_value"],
         })
+
+    if common_only and len(model_ids) > 1:
+        # Filter to only data points at training steps where ALL models have results
+        all_steps_per_model = {mid: {dp["training_step"] for dp in info["data_points"]} for mid, info in result.items()}
+        common_steps = set.intersection(*all_steps_per_model.values()) if all_steps_per_model else set()
+        for mid in result:
+            result[mid]["data_points"] = [dp for dp in result[mid]["data_points"] if dp["training_step"] in common_steps]
 
     return {"dataset": dataset, "models": list(result.values())}
 
@@ -418,7 +446,14 @@ async def get_heatmap():
             "eval_run_id": r["eval_run_id"],
         }
 
-    return {"models": models, "datasets": datasets, "matrix": matrix}
+    coverage = {}
+    for m in models:
+        mid = m["model_id"]
+        evaluated = len([ds for ds in datasets if ds in matrix.get(mid, {}) and matrix[mid][ds].get("score") is not None])
+        missing = [ds for ds in datasets if ds not in matrix.get(mid, {}) or matrix[mid][ds].get("score") is None]
+        coverage[mid] = {"evaluated": evaluated, "total": len(datasets), "missing": missing}
+
+    return {"models": models, "datasets": datasets, "matrix": matrix, "coverage": coverage}
 
 
 # ---------------------------------------------------------------------------
@@ -441,26 +476,35 @@ async def get_model_diagnosis(model_id: str):
     if not latest_cp:
         return {"model_id": model_id, "scores": {}, "latest_checkpoint": None}
 
-    # Latest scores
+    # Latest scores (now includes CI columns)
     latest_scores = await db.fetch(
-        "SELECT dataset_name, metric_name, metric_value FROM eval_results "
+        "SELECT dataset_name, metric_name, metric_value, ci_lower, ci_upper, stderr FROM eval_results "
         "WHERE checkpoint_id = $1 AND is_primary = TRUE",
         latest_cp["checkpoint_id"],
     )
 
-    # Best baseline per dataset
+    # Best baseline per dataset (with CI columns from the best-scoring row)
     baselines = await db.fetch(
         """
-        SELECT e.dataset_name, MAX(e.metric_value) AS best_score,
-               (array_agg(m.display_name ORDER BY e.metric_value DESC))[1] AS best_model
-        FROM eval_results e
-        JOIN checkpoints c ON c.checkpoint_id = e.checkpoint_id
-        JOIN models m ON m.model_id = c.model_id
-        WHERE m.model_type = 'baseline' AND e.is_primary = TRUE
-        GROUP BY e.dataset_name
+        WITH ranked_baselines AS (
+            SELECT e.dataset_name, e.metric_value, e.ci_lower, e.ci_upper, e.stderr,
+                   m.display_name,
+                   ROW_NUMBER() OVER (PARTITION BY e.dataset_name ORDER BY e.metric_value DESC) AS rn
+            FROM eval_results e
+            JOIN checkpoints c ON c.checkpoint_id = e.checkpoint_id
+            JOIN models m ON m.model_id = c.model_id
+            WHERE m.model_type = 'baseline' AND e.is_primary = TRUE
+        )
+        SELECT dataset_name, metric_value AS best_score, ci_lower, ci_upper, stderr, display_name AS best_model
+        FROM ranked_baselines WHERE rn = 1
         """
     )
-    baseline_map = {r["dataset_name"]: {"score": r["best_score"], "model": r["best_model"]} for r in baselines}
+    baseline_map = {
+        r["dataset_name"]: {
+            "score": r["best_score"], "model": r["best_model"],
+            "ci_lower": r["ci_lower"], "ci_upper": r["ci_upper"], "stderr": r["stderr"],
+        } for r in baselines
+    }
 
     # Recent checkpoints for trend (last 5)
     recent = await db.fetch(
@@ -482,6 +526,21 @@ async def get_model_diagnosis(model_id: str):
             recent_by_ds[ds] = []
         if len(recent_by_ds[ds]) < 5:
             recent_by_ds[ds].append(r["metric_value"])
+
+    def compute_significance(m_val, m_ci_lo, m_ci_hi, b_val, b_ci_lo, b_ci_hi):
+        if m_ci_lo is None or b_ci_lo is None:
+            return "insufficient_data"
+        # Check for no overlap
+        if m_ci_lo > b_ci_hi or b_ci_lo > m_ci_hi:
+            return "likely_real"
+        # Compute overlap fraction
+        overlap = min(m_ci_hi, b_ci_hi) - max(m_ci_lo, b_ci_lo)
+        m_width = m_ci_hi - m_ci_lo
+        b_width = b_ci_hi - b_ci_lo
+        smaller_width = min(m_width, b_width) if min(m_width, b_width) > 0 else 1
+        if overlap / smaller_width > 0.5:
+            return "likely_noise"
+        return "uncertain"
 
     def compute_trend(values: list) -> str:
         if len(values) < 2:
@@ -508,12 +567,20 @@ async def get_model_diagnosis(model_id: str):
         val = s["metric_value"]
         bl_score = bl.get("score")
         gap = round(val - bl_score, 4) if bl_score is not None else None
+        significance = compute_significance(
+            val, s["ci_lower"], s["ci_upper"],
+            bl_score, bl.get("ci_lower"), bl.get("ci_upper"),
+        ) if bl_score is not None else "insufficient_data"
         scores[ds] = {
             "value": round(val, 4),
             "metric_name": s["metric_name"],
+            "ci_lower": s["ci_lower"],
+            "ci_upper": s["ci_upper"],
+            "stderr": s["stderr"],
             "baseline_best": round(bl_score, 4) if bl_score else None,
             "baseline_model": bl.get("model"),
             "gap": gap,
+            "significance": significance,
             "trend": compute_trend(recent_by_ds.get(ds, [])),
         }
 

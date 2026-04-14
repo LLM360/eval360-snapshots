@@ -97,20 +97,25 @@ async def upsert_eval_result(result: dict) -> None:
     await execute(
         """
         INSERT INTO eval_results (checkpoint_id, dataset_name, metric_name, metric_value,
-                                  is_primary, eval_config, eval_run_id, sample_count)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                  is_primary, eval_config, eval_run_id, sample_count,
+                                  ci_lower, ci_upper, stderr)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (checkpoint_id, dataset_name, metric_name) DO UPDATE SET
             metric_value = EXCLUDED.metric_value,
             is_primary = EXCLUDED.is_primary,
             eval_config = EXCLUDED.eval_config,
             eval_run_id = COALESCE(EXCLUDED.eval_run_id, eval_results.eval_run_id),
             sample_count = COALESCE(EXCLUDED.sample_count, eval_results.sample_count),
+            ci_lower = COALESCE(EXCLUDED.ci_lower, eval_results.ci_lower),
+            ci_upper = COALESCE(EXCLUDED.ci_upper, eval_results.ci_upper),
+            stderr = COALESCE(EXCLUDED.stderr, eval_results.stderr),
             ingested_at = NOW()
         """,
         result["checkpoint_id"], result["dataset_name"],
         result["metric_name"], result["metric_value"],
         result.get("is_primary", False), json.dumps(result.get("eval_config", {})),
         result.get("eval_run_id"), result.get("sample_count"),
+        result.get("ci_lower"), result.get("ci_upper"), result.get("stderr"),
     )
 
 

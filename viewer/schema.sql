@@ -99,3 +99,12 @@ GROUP BY checkpoint_id, dataset_name;
 
 UPDATE eval_results SET eval_run_id = 'legacy-' || checkpoint_id || '-' || dataset_name
 WHERE eval_run_id IS NULL;
+
+
+-- =========================================================================
+-- Phase 2: Confidence intervals
+-- =========================================================================
+
+ALTER TABLE eval_results ADD COLUMN IF NOT EXISTS ci_lower DOUBLE PRECISION;
+ALTER TABLE eval_results ADD COLUMN IF NOT EXISTS ci_upper DOUBLE PRECISION;
+ALTER TABLE eval_results ADD COLUMN IF NOT EXISTS stderr DOUBLE PRECISION;
