@@ -711,6 +711,14 @@ function trendIcon(t) {
   return map[t] || '\u2022';
 }
 
+function formatParams(n) {
+  if (!n) return null;
+  if (n >= 1e12) return (n/1e12).toFixed(1) + 'T';
+  if (n >= 1e9) return (n/1e9).toFixed(0) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(0) + 'M';
+  return String(n);
+}
+
 /* ===================================================================
    CHART MANAGEMENT
    =================================================================== */
@@ -945,14 +953,14 @@ async function viewObservatory(app) {
   app.appendChild(wrap);
 
   wrap.appendChild(el('div', {class:'loading'}, 'Loading observatory...'));
-  const data = await api('/api/heatmap');
+  const [initialData, suitesData] = await Promise.all([api('/api/heatmap'), api('/api/suites')]);
   clearNode(wrap);
 
   // Stats bar
   const statsBar = el('div', {class:'stats-bar'});
-  const trainCount = data.models.filter(m => m.model_type === 'training').length;
-  const baseCount = data.models.filter(m => m.model_type === 'baseline').length;
-  [[data.models.length, 'models'], [trainCount, 'training'], [baseCount, 'baselines'], [data.datasets.length, 'benchmarks']].forEach(([v, l]) => {
+  const trainCount = initialData.models.filter(m => m.model_type === 'training').length;
+  const baseCount = initialData.models.filter(m => m.model_type === 'baseline').length;
+  [[initialData.models.length, 'models'], [trainCount, 'training'], [baseCount, 'baselines'], [initialData.datasets.length, 'benchmarks']].forEach(([v, l]) => {
     const item = el('div', {class:'stat-item'});
     item.appendChild(el('span', {class:'stat-value'}, String(v)));
     item.appendChild(el('span', {class:'stat-label'}, l));
@@ -960,80 +968,149 @@ async function viewObservatory(app) {
   });
   wrap.appendChild(statsBar);
 
-  wrap.appendChild(el('div', {class:'section-head'}, 'Performance Heatmap'));
-
-  // Find best score per dataset for highlighting
-  const bestPerDs = {};
-  for (const ds of data.datasets) {
-    let best = -1;
-    for (const m of data.models) {
-      const entry = (data.matrix[m.model_id] || {})[ds];
-      const v = entry && entry.score != null ? entry.score : null;
-      if (v != null && v > best) best = v;
-    }
-    bestPerDs[ds] = best;
+  // Section head with suite selector
+  const sectionHead = el('div', {class:'section-head', style:'display:flex;align-items:center;'});
+  sectionHead.appendChild(document.createTextNode('Performance Heatmap'));
+  const suiteSelect = document.createElement('select');
+  suiteSelect.style.cssText = 'margin-left:auto;';
+  const allOpt = document.createElement('option');
+  allOpt.value = '';
+  allOpt.textContent = 'All Benchmarks';
+  suiteSelect.appendChild(allOpt);
+  for (const s of suitesData.suites) {
+    const opt = document.createElement('option');
+    opt.value = s.suite_id;
+    opt.textContent = s.display_name + ' (' + s.dataset_names.length + ')';
+    suiteSelect.appendChild(opt);
   }
+  sectionHead.appendChild(suiteSelect);
+  wrap.appendChild(sectionHead);
 
-  // Build heatmap table
-  const tableWrap = el('div', {class:'heatmap-wrap'});
-  const table = document.createElement('table');
-  table.className = 'heatmap';
+  const heatmapContainer = el('div');
+  wrap.appendChild(heatmapContainer);
 
-  // Header
-  const thead = document.createElement('thead');
-  const hRow = document.createElement('tr');
-  hRow.appendChild(el('th', {style:'text-align:left'}, 'Model'));
-  hRow.appendChild(el('th', null, 'Type'));
-  for (const ds of data.datasets) hRow.appendChild(el('th', null, ds));
-  thead.appendChild(hRow);
-  table.appendChild(thead);
+  function renderObservatoryHeatmap(data) {
+    clearNode(heatmapContainer);
 
-  // Body
-  const tbody = document.createElement('tbody');
-  let lastType = null;
-
-  for (const m of data.models) {
-    // Type separator row
-    if (m.model_type !== lastType) {
-      lastType = m.model_type;
-      const sepRow = document.createElement('tr');
-      sepRow.className = 'type-separator';
-      const sepTd = document.createElement('td');
-      sepTd.colSpan = data.datasets.length + 2;
-      sepTd.textContent = m.model_type === 'training' ? 'Training Models' : 'Baselines';
-      sepRow.appendChild(sepTd);
-      tbody.appendChild(sepRow);
+    // Build ordered datasets from categories
+    const catOrder = Object.keys(data.categories || {}).sort();
+    const orderedDatasets = [];
+    for (const cat of catOrder) {
+      orderedDatasets.push(...(data.categories[cat] || []).sort());
     }
-
-    const tr = document.createElement('tr');
-
-    // Model name
-    const nameTd = document.createElement('td');
-    nameTd.className = 'model-cell';
-    nameTd.textContent = m.display_name;
-    nameTd.addEventListener('click', () => { location.hash = '#model/' + encodeURIComponent(m.model_id); });
-    tr.appendChild(nameTd);
-
-    // Type badge
-    const typeTd = document.createElement('td');
-    typeTd.appendChild(makeBadge(m.model_type));
-    tr.appendChild(typeTd);
-
-    // Score cells
-    const scores = data.matrix[m.model_id] || {};
+    const categorized = new Set(orderedDatasets);
     for (const ds of data.datasets) {
-      const td = document.createElement('td');
-      const entry = scores[ds] || null;
-      renderScoreCell(td, entry, bestPerDs[ds]);
-      tr.appendChild(td);
+      if (!categorized.has(ds)) orderedDatasets.push(ds);
     }
 
-    tbody.appendChild(tr);
+    // Find best score per dataset for highlighting
+    const bestPerDs = {};
+    for (const ds of orderedDatasets) {
+      let best = -1;
+      for (const m of data.models) {
+        const entry = (data.matrix[m.model_id] || {})[ds];
+        const v = entry && entry.score != null ? entry.score : null;
+        if (v != null && v > best) best = v;
+      }
+      bestPerDs[ds] = best;
+    }
+
+    // Build heatmap table
+    const tableWrap = el('div', {class:'heatmap-wrap'});
+    const table = document.createElement('table');
+    table.className = 'heatmap';
+
+    // Header
+    const thead = document.createElement('thead');
+
+    // Category sub-header row
+    if (catOrder.length > 0) {
+      const catRow = document.createElement('tr');
+      catRow.className = 'type-separator';
+      const catModelTd = document.createElement('td');
+      catModelTd.colSpan = 2;
+      catRow.appendChild(catModelTd);
+      for (const cat of catOrder) {
+        const catTd = document.createElement('td');
+        catTd.colSpan = (data.categories[cat] || []).length;
+        catTd.textContent = cat;
+        catTd.style.cssText = 'text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);';
+        catRow.appendChild(catTd);
+      }
+      // Uncategorized columns
+      const uncatCount = orderedDatasets.length - categorized.size + (orderedDatasets.length - [...categorized].length);
+      const actualUncat = orderedDatasets.filter(ds => !categorized.has(ds) || !catOrder.some(cat => (data.categories[cat] || []).includes(ds)));
+      if (data.datasets.filter(ds => !categorized.has(ds)).length > 0) {
+        const uncatTd = document.createElement('td');
+        uncatTd.colSpan = data.datasets.filter(ds => !categorized.has(ds)).length;
+        catRow.appendChild(uncatTd);
+      }
+      thead.appendChild(catRow);
+    }
+
+    const hRow = document.createElement('tr');
+    hRow.appendChild(el('th', {style:'text-align:left'}, 'Model'));
+    hRow.appendChild(el('th', null, 'Type'));
+    for (const ds of orderedDatasets) hRow.appendChild(el('th', null, ds));
+    thead.appendChild(hRow);
+    table.appendChild(thead);
+
+    // Body
+    const tbody = document.createElement('tbody');
+    let lastType = null;
+
+    for (const m of data.models) {
+      // Type separator row
+      if (m.model_type !== lastType) {
+        lastType = m.model_type;
+        const sepRow = document.createElement('tr');
+        sepRow.className = 'type-separator';
+        const sepTd = document.createElement('td');
+        sepTd.colSpan = orderedDatasets.length + 2;
+        sepTd.textContent = m.model_type === 'training' ? 'Training Models' : 'Baselines';
+        sepRow.appendChild(sepTd);
+        tbody.appendChild(sepRow);
+      }
+
+      const tr = document.createElement('tr');
+
+      // Model name
+      const nameTd = document.createElement('td');
+      nameTd.className = 'model-cell';
+      nameTd.textContent = m.display_name;
+      nameTd.addEventListener('click', () => { location.hash = '#model/' + encodeURIComponent(m.model_id); });
+      tr.appendChild(nameTd);
+
+      // Type badge
+      const typeTd = document.createElement('td');
+      typeTd.appendChild(makeBadge(m.model_type));
+      tr.appendChild(typeTd);
+
+      // Score cells
+      const scores = data.matrix[m.model_id] || {};
+      for (const ds of orderedDatasets) {
+        const td = document.createElement('td');
+        const entry = scores[ds] || null;
+        renderScoreCell(td, entry, bestPerDs[ds]);
+        tr.appendChild(td);
+      }
+
+      tbody.appendChild(tr);
+    }
+
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+    heatmapContainer.appendChild(tableWrap);
   }
 
-  table.appendChild(tbody);
-  tableWrap.appendChild(table);
-  wrap.appendChild(tableWrap);
+  renderObservatoryHeatmap(initialData);
+
+  suiteSelect.addEventListener('change', async () => {
+    const suiteId = suiteSelect.value;
+    const url = suiteId ? '/api/heatmap?suite_id=' + encodeURIComponent(suiteId) : '/api/heatmap';
+    const newData = await api(url);
+    renderObservatoryHeatmap(newData);
+  });
 }
 
 /* ===================================================================
@@ -1055,8 +1132,16 @@ async function viewModels(app) {
     const card = el('div', {class:'card page-enter stagger-' + Math.min(i+1, 6)});
 
     const header = el('div', {class:'card-header'});
-    header.appendChild(el('span', {class:'card-name'}, m.display_name));
+    const nameText = (m.is_pinned ? '\ud83d\udccc ' : '') + m.display_name;
+    header.appendChild(el('span', {class:'card-name'}, nameText));
     header.appendChild(makeBadge(m.model_type));
+    const paramLabel = formatParams(m.param_count);
+    if (paramLabel) {
+      header.appendChild(el('span', {
+        class: 'badge',
+        style: 'background:var(--accent-dim);color:var(--accent);margin-left:4px;',
+      }, paramLabel));
+    }
     const cov = heatmapData.coverage?.[m.model_id];
     if (cov) {
       const covBadge = el('span', {
@@ -1213,6 +1298,10 @@ async function viewModelDetail(app, modelId) {
   defaultRefOpt.value = '__best_baseline__';
   defaultRefOpt.textContent = 'Best baseline (default)';
   refSelect.appendChild(defaultRefOpt);
+  const sizeMatchedOpt = document.createElement('option');
+  sizeMatchedOpt.value = '__size_matched__';
+  sizeMatchedOpt.textContent = 'Size-matched (\u00b150%)';
+  refSelect.appendChild(sizeMatchedOpt);
   for (const m of allModels.models) {
     if (m.model_id === modelId) continue;
     const opt = document.createElement('option');
@@ -1382,6 +1471,58 @@ async function viewModelDetail(app, modelId) {
       buildDeltaChart(defaultRefScores, 'Best Baseline');
       // Also rebuild gap table with default data
       rebuildGapTable(diagData.scores);
+    } else if (refId === '__size_matched__') {
+      // Size-matched: find models within +/-50% param_count of primary model
+      const primaryParams = model.param_count;
+      let sizeMatchedRef = null;
+      if (primaryParams) {
+        const lo = primaryParams * 0.5;
+        const hi = primaryParams * 1.5;
+        const candidates = allModels.models.filter(m =>
+          m.model_id !== modelId && m.param_count && m.param_count >= lo && m.param_count <= hi
+        );
+        // Pick candidate with best average score from heatmap
+        if (candidates.length > 0) {
+          // Fetch heatmap to get average scores
+          try {
+            const hm = await api('/api/heatmap');
+            let bestAvg = -1;
+            for (const c of candidates) {
+              const scores = hm.matrix[c.model_id] || {};
+              const vals = Object.values(scores).map(e => e && e.score != null ? e.score : null).filter(v => v != null);
+              const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : -1;
+              if (avg > bestAvg) { bestAvg = avg; sizeMatchedRef = c; }
+            }
+          } catch (e) {
+            // Fallback: pick first candidate
+            sizeMatchedRef = candidates[0];
+          }
+        }
+      }
+      if (sizeMatchedRef) {
+        try {
+          const refData = await api('/api/models/' + encodeURIComponent(sizeMatchedRef.model_id) + '/scores');
+          const refScores = {};
+          const refName = sizeMatchedRef.display_name + ' (size-matched)';
+          for (const s of refData.scores) {
+            if (s.is_primary) refScores[s.dataset_name] = s.metric_value;
+          }
+          buildDeltaChart(refScores, refName);
+          const newGapData = {};
+          for (const [ds, info] of sortedDs) {
+            const refVal = refScores[ds];
+            const gap = (refVal != null && info.value != null) ? info.value - refVal : null;
+            newGapData[ds] = { ...info, baseline_best: refVal, baseline_model: refName, gap };
+          }
+          rebuildGapTable(newGapData);
+        } catch (e) {
+          console.error('Failed to fetch size-matched reference scores:', e);
+        }
+      } else {
+        // No size-matched model found, fall back to best baseline
+        buildDeltaChart(defaultRefScores, 'Best Baseline (no size match)');
+        rebuildGapTable(diagData.scores);
+      }
     } else {
       try {
         const refData = await api('/api/models/' + encodeURIComponent(refId) + '/scores');
@@ -1713,54 +1854,121 @@ async function viewLeaderboard(app) {
   app.appendChild(wrap);
   wrap.appendChild(el('div', {class:'loading'}, 'Loading leaderboard...'));
 
-  const data = await api('/api/heatmap');
+  const [initialData, suitesData] = await Promise.all([api('/api/heatmap'), api('/api/suites')]);
   clearNode(wrap);
 
-  wrap.appendChild(el('div', {class:'section-head'}, 'All Models \u00d7 All Benchmarks'));
+  // Section head with suite selector
+  const sectionHead = el('div', {class:'section-head', style:'display:flex;align-items:center;'});
+  sectionHead.appendChild(document.createTextNode('All Models \u00d7 All Benchmarks'));
+  const lbSuiteSelect = document.createElement('select');
+  lbSuiteSelect.style.cssText = 'margin-left:auto;';
+  const lbAllOpt = document.createElement('option');
+  lbAllOpt.value = '';
+  lbAllOpt.textContent = 'All Benchmarks';
+  lbSuiteSelect.appendChild(lbAllOpt);
+  for (const s of suitesData.suites) {
+    const opt = document.createElement('option');
+    opt.value = s.suite_id;
+    opt.textContent = s.display_name + ' (' + s.dataset_names.length + ')';
+    lbSuiteSelect.appendChild(opt);
+  }
+  sectionHead.appendChild(lbSuiteSelect);
+  wrap.appendChild(sectionHead);
 
   // Sort control
   const sortBar = el('div', {class:'compare-bar'});
   sortBar.appendChild(el('label', null, 'Sort by:'));
   const sortSelect = document.createElement('select');
-  const defaultOpt = document.createElement('option');
-  defaultOpt.value = '';
-  defaultOpt.textContent = 'Default';
-  sortSelect.appendChild(defaultOpt);
-  for (const ds of data.datasets) {
-    const opt = document.createElement('option');
-    opt.value = ds;
-    opt.textContent = ds;
-    sortSelect.appendChild(opt);
-  }
   sortBar.appendChild(sortSelect);
   wrap.appendChild(sortBar);
 
   const tableContainer = el('div');
   wrap.appendChild(tableContainer);
 
-  // Best per column
-  const bestPerDs = {};
-  for (const ds of data.datasets) {
-    let best = -1;
-    for (const m of data.models) {
-      const entry = (data.matrix[m.model_id] || {})[ds];
-      const v = entry && entry.score != null ? entry.score : null;
-      if (v != null && v > best) best = v;
+  let currentData = initialData;
+
+  function populateSortSelect(data) {
+    clearNode(sortSelect);
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'Default';
+    sortSelect.appendChild(defaultOpt);
+    // Build ordered datasets from categories
+    const catOrder = Object.keys(data.categories || {}).sort();
+    const orderedDatasets = [];
+    for (const cat of catOrder) {
+      orderedDatasets.push(...(data.categories[cat] || []).sort());
     }
-    bestPerDs[ds] = best;
+    const categorized = new Set(orderedDatasets);
+    for (const ds of data.datasets) {
+      if (!categorized.has(ds)) orderedDatasets.push(ds);
+    }
+    for (const ds of orderedDatasets) {
+      const opt = document.createElement('option');
+      opt.value = ds;
+      opt.textContent = ds;
+      sortSelect.appendChild(opt);
+    }
   }
 
-  function renderPivot(sortDs) {
+  function renderPivot(data, sortDs) {
     clearNode(tableContainer);
+
+    // Build ordered datasets from categories
+    const catOrder = Object.keys(data.categories || {}).sort();
+    const orderedDatasets = [];
+    for (const cat of catOrder) {
+      orderedDatasets.push(...(data.categories[cat] || []).sort());
+    }
+    const categorized = new Set(orderedDatasets);
+    for (const ds of data.datasets) {
+      if (!categorized.has(ds)) orderedDatasets.push(ds);
+    }
+
+    // Best per column
+    const bestPerDs = {};
+    for (const ds of orderedDatasets) {
+      let best = -1;
+      for (const m of data.models) {
+        const entry = (data.matrix[m.model_id] || {})[ds];
+        const v = entry && entry.score != null ? entry.score : null;
+        if (v != null && v > best) best = v;
+      }
+      bestPerDs[ds] = best;
+    }
+
     const pivotWrap = el('div', {class:'pivot-wrap'});
     const table = document.createElement('table');
     table.className = 'pivot';
 
     const thead = document.createElement('thead');
+
+    // Category sub-header row
+    if (catOrder.length > 0) {
+      const catRow = document.createElement('tr');
+      catRow.className = 'type-separator';
+      const catModelTd = document.createElement('td');
+      catModelTd.colSpan = 2;
+      catRow.appendChild(catModelTd);
+      for (const cat of catOrder) {
+        const catTd = document.createElement('td');
+        catTd.colSpan = (data.categories[cat] || []).length;
+        catTd.textContent = cat;
+        catTd.style.cssText = 'text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);';
+        catRow.appendChild(catTd);
+      }
+      if (data.datasets.filter(ds => !categorized.has(ds)).length > 0) {
+        const uncatTd = document.createElement('td');
+        uncatTd.colSpan = data.datasets.filter(ds => !categorized.has(ds)).length;
+        catRow.appendChild(uncatTd);
+      }
+      thead.appendChild(catRow);
+    }
+
     const hRow = document.createElement('tr');
     hRow.appendChild(el('th', {style:'text-align:left'}, 'Model'));
     hRow.appendChild(el('th', null, 'Type'));
-    for (const ds of data.datasets) {
+    for (const ds of orderedDatasets) {
       const th = el('th', null, ds);
       if (ds === sortDs) th.style.color = 'var(--accent)';
       hRow.appendChild(th);
@@ -1797,7 +2005,7 @@ async function viewLeaderboard(app) {
       tr.appendChild(typeTd);
 
       const scores = data.matrix[m.model_id] || {};
-      for (const ds of data.datasets) {
+      for (const ds of orderedDatasets) {
         const td = document.createElement('td');
         const entry = scores[ds] || null;
         renderScoreCell(td, entry, bestPerDs[ds]);
@@ -1812,8 +2020,17 @@ async function viewLeaderboard(app) {
     tableContainer.appendChild(pivotWrap);
   }
 
-  renderPivot('');
-  sortSelect.addEventListener('change', () => renderPivot(sortSelect.value));
+  populateSortSelect(initialData);
+  renderPivot(initialData, '');
+  sortSelect.addEventListener('change', () => renderPivot(currentData, sortSelect.value));
+
+  lbSuiteSelect.addEventListener('change', async () => {
+    const suiteId = lbSuiteSelect.value;
+    const url = suiteId ? '/api/heatmap?suite_id=' + encodeURIComponent(suiteId) : '/api/heatmap';
+    currentData = await api(url);
+    populateSortSelect(currentData);
+    renderPivot(currentData, '');
+  });
 }
 </script>
 </body>
