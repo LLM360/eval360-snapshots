@@ -667,8 +667,16 @@ function el(tag, attrs, text) {
 
 function makeBadge(t) { return el('span', {class: 'badge badge-' + t}, t); }
 
+// Detect base path: if served at /eval360/, API calls need /eval360/api/...
+const BASE_PATH = (() => {
+  const p = window.location.pathname;
+  // Match /eval360/ or /rl360/ or any subpath prefix before the hash
+  const m = p.match(/^(\/[^/]+\/)/);
+  return m ? m[1].replace(/\/$/, '') : '';
+})();
+
 async function api(path) {
-  const r = await fetch(path);
+  const r = await fetch(BASE_PATH + path);
   if (!r.ok) throw new Error('API error: ' + r.status);
   return r.json();
 }
