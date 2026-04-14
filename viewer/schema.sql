@@ -158,3 +158,63 @@ CREATE INDEX IF NOT EXISTS idx_examples_run ON example_results(eval_run_id);
 CREATE INDEX IF NOT EXISTS idx_examples_correct ON example_results(eval_run_id, correct);
 CREATE INDEX IF NOT EXISTS idx_examples_topic ON example_results(topic);
 CREATE INDEX IF NOT EXISTS idx_examples_difficulty ON example_results(difficulty);
+
+
+-- =========================================================================
+-- Phase 5: Operational observatory + promotion gates
+-- =========================================================================
+
+-- Alerts: automated regression/improvement/promotion notifications
+CREATE TABLE IF NOT EXISTS alerts (
+    id              SERIAL PRIMARY KEY,
+    alert_type      TEXT NOT NULL CHECK (alert_type IN ('regression', 'improvement', 'promotion_ready')),
+    model_id        TEXT NOT NULL REFERENCES models(model_id) ON DELETE CASCADE,
+    checkpoint_id   TEXT NOT NULL,
+    dataset_name    TEXT,
+    severity        TEXT NOT NULL DEFAULT 'info'
+                    CHECK (severity IN ('critical', 'warning', 'info')),
+    message         TEXT NOT NULL,
+    detail          JSONB DEFAULT '{}',
+    acknowledged    BOOLEAN DEFAULT FALSE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_model ON alerts(model_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts(alert_type);
+CREATE INDEX IF NOT EXISTS idx_alerts_unack ON alerts(acknowledged) WHERE acknowledged = FALSE;
+
+-- Promotion rules: criteria for checkpoint readiness
+CREATE TABLE IF NOT EXISTS promotion_rules (
+    id              SERIAL PRIMARY KEY,
+    rule_name       TEXT NOT NULL UNIQUE,
+    model_id        TEXT,
+    suite_id        TEXT,
+    min_scores      JSONB DEFAULT '{}',
+    no_regressions  BOOLEAN DEFAULT TRUE,
+    description     TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Activity log: audit trail of dashboard events
+CREATE TABLE IF NOT EXISTS activity_log (
+    id              SERIAL PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    model_id        TEXT,
+    checkpoint_id   TEXT,
+    dataset_name    TEXT,
+    summary         TEXT NOT NULL,
+    detail          JSONB DEFAULT '{}',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_model ON activity_log(model_id);
+
+-- Webhooks: optional HTTP callbacks on events
+CREATE TABLE IF NOT EXISTS webhooks (
+    id              SERIAL PRIMARY KEY,
+    url             TEXT NOT NULL,
+    events          TEXT[] NOT NULL,
+    active          BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
