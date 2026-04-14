@@ -61,14 +61,16 @@ async def execute(query: str, *args: Any) -> str:
 async def upsert_model(model: dict) -> None:
     await execute(
         """
-        INSERT INTO models (model_id, display_name, model_type, owner)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO models (model_id, display_name, model_type, owner, param_count)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (model_id) DO UPDATE SET
             display_name = EXCLUDED.display_name,
-            owner = EXCLUDED.owner
+            owner = EXCLUDED.owner,
+            param_count = COALESCE(EXCLUDED.param_count, models.param_count)
         """,
         model["model_id"], model["display_name"],
         model.get("model_type", "training"), model["owner"],
+        model.get("param_count"),
     )
 
 
@@ -151,3 +153,56 @@ async def upsert_eval_run(run: dict) -> None:
 
 async def get_eval_run(eval_run_id: str) -> asyncpg.Record | None:
     return await fetchrow("SELECT * FROM eval_runs WHERE eval_run_id = $1", eval_run_id)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Benchmark taxonomy + suites
+# ---------------------------------------------------------------------------
+
+async def upsert_benchmark_metadata(meta: dict) -> None:
+    await execute(
+        """
+        INSERT INTO benchmark_metadata (dataset_name, category, subcategory, primary_metric, description)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (dataset_name) DO UPDATE SET
+            category = COALESCE(EXCLUDED.category, benchmark_metadata.category),
+            subcategory = COALESCE(EXCLUDED.subcategory, benchmark_metadata.subcategory),
+            primary_metric = COALESCE(EXCLUDED.primary_metric, benchmark_metadata.primary_metric),
+            description = COALESCE(EXCLUDED.description, benchmark_metadata.description)
+        """,
+        meta["dataset_name"], meta.get("category", "uncategorized"),
+        meta.get("subcategory"), meta.get("primary_metric"), meta.get("description"),
+    )
+
+
+async def upsert_suite(suite: dict) -> None:
+    await execute(
+        """
+        INSERT INTO eval_suites (suite_id, display_name, description, dataset_names)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (suite_id) DO UPDATE SET
+            display_name = EXCLUDED.display_name,
+            description = EXCLUDED.description,
+            dataset_names = EXCLUDED.dataset_names
+        """,
+        suite["suite_id"], suite["display_name"], suite.get("description"),
+        suite["dataset_names"],
+    )
+
+
+async def update_model_metadata(model_id: str, updates: dict) -> None:
+    sets = []
+    params = []
+    idx = 1
+    if "param_count" in updates:
+        sets.append(f"param_count = ${idx}")
+        params.append(updates["param_count"])
+        idx += 1
+    if "is_pinned" in updates:
+        sets.append(f"is_pinned = ${idx}")
+        params.append(updates["is_pinned"])
+        idx += 1
+    if not sets:
+        return
+    params.append(model_id)
+    await execute(f"UPDATE models SET {', '.join(sets)} WHERE model_id = ${idx}", *params)
