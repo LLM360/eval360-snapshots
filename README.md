@@ -2,28 +2,14 @@
 
 Dashboard for tracking LLM evaluation results across checkpoints and datasets. Shows score progression over training, radar capability profiles, gap analysis against baselines, and cross-model heatmaps.
 
-## Architecture
-
-```
-Slurm cluster                          EC2 instance
-┌────────────────────┐                ┌───────────────────────────┐
-│ Eval360-V2         │                │ eval360 viewer (FastAPI)  │
-│ scheduler          │──HTTP POST───▶│ port 11003                │
-│                    │                │         │                 │
-│ dashboard_hook.py  │                │         ▼                 │
-│ (auto-pushes       │                │   RDS Postgres            │
-│  after grading)    │                │   (models, checkpoints,   │
-└────────────────────┘                │    eval_results)          │
-                                      └───────────────────────────┘
-backfill.py ─HTTP POST──────────────────────▲        │
-(one-time import of                                  ▼
- existing _scores.yaml)                       Browser (dashboard UI)
-```
-
 ## Quick start (mock demo)
 
 ```bash
-cd viewer
+# 1. Clone
+git clone git@github.com:LLM360/eval360-snapshots.git
+cd eval360-snapshots/viewer
+
+# 2. Install deps and run
 pip install fastapi uvicorn pydantic
 python mock_server.py --port 11001
 # Open http://localhost:11001
@@ -89,37 +75,53 @@ systemctl --user status eval360-viewer
 journalctl --user -u eval360-viewer -f
 ```
 
-### EC2 services layout
+## Architecture
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| `rl360-viewer` | 11001 | RL training dashboard |
-| `team-sessions` | 11002 | Team sessions API |
-| `eval360-viewer` | 11003 | Eval dashboard (this project) |
-
-### Accessing from the Slurm cluster
-
-The EC2 security group doesn't expose port 11003 directly. Use an SSH tunnel:
-
-```bash
-ssh -i ~/.ssh/rl360-viewer-key.pem -f -N -L 29876:localhost:11003 ec2-user@100.52.207.136
-# Dashboard is now at http://localhost:29876
+```
+Browser -> Cloudflare DNS proxy (dashboard.llm360.ai/eval360/) -> EC2 -> eval360 viewer (FastAPI)
+                                                                               |
+                                                                          Postgres (RDS)
+                                                                          (models, checkpoints,
+                                                                           eval_results)
 ```
 
-For permanent access, set up a Cloudflare DNS record (e.g., `eval360.llm360.ai`) with a Cloudflare Access bypass for `/api/ingest`, same pattern as the [rl360 viewer](https://github.com/LLM360/rl360-snapshots/blob/main/viewer/README.md#cloudflare-access-and-the-ingest-api).
+- **Ingest**: Eval360-V2 scheduler POSTs scores to the viewer via `POST /api/ingest/eval-result`
+- **Backfill**: `backfill.py` CLI imports existing `_scores.yaml` files from past eval runs
+- **Views**: Observatory heatmap, model radar profiles, gap analysis, training curves, leaderboard
+
+The eval360 viewer shares an EC2 instance and Cloudflare domain with the [rl360 viewer](https://github.com/LLM360/rl360-snapshots). Both are served under `dashboard.llm360.ai`:
+
+| Path | Service | Port |
+|------|---------|------|
+| `/rl360/` | RL360 training dashboard | 11001 |
+| `/eval360/` | Eval360 eval dashboard (this project) | 11003 |
+
+Nginx on the EC2 instance routes by path prefix. See the [rl360 viewer README](https://github.com/LLM360/rl360-snapshots/blob/main/viewer/README.md#shared-domain-setup) for the full nginx and Cloudflare Access configuration.
+
+### Cloudflare Access and the ingest API
+
+The ingest endpoint (`/eval360/api/ingest/*`) must be bypassed in Cloudflare Access so that the Eval360-V2 scheduler (running on the Slurm cluster) can POST scores without SSO. The working setup is a Cloudflare Access application:
+
+- **`dashboard.llm360.ai/eval360/api/ingest`**: Action=**Bypass**, Include=Everyone.
+
+If ingest stops working and the scheduler reports HTTP 302, check that the Bypass application still exists in the Cloudflare Zero Trust dashboard.
 
 ## Eval360-V2 auto-ingest
 
 Set these env vars in your Eval360-V2 scheduler environment:
 
 ```bash
-export EVAL360_DASHBOARD_URL=http://localhost:29876   # via SSH tunnel
+export EVAL360_DASHBOARD_URL=https://dashboard.llm360.ai/eval360
 export EVAL360_DASHBOARD_TOKEN=<your-ingest-token>
 ```
 
-Results are automatically pushed to the dashboard when eval jobs complete. The hook is a no-op when these vars are unset.
+Then run evals as normal. Results are automatically pushed to the dashboard when grading completes. The hook is a no-op when these vars are unset.
+
+The hook is implemented in `scheduler/dashboard_hook.py` in the [Eval360-V2 repo](https://github.com/LLM360/Eval360-V2).
 
 ## Backfill existing results
+
+Import `_scores.yaml` files from past eval runs:
 
 ```bash
 # Training model (multiple checkpoints)
@@ -127,7 +129,7 @@ python viewer/backfill.py \
   --output-dir /path/to/Eval360-V2/output/k2-think-v2/ \
   --model-id k2-think-v2 \
   --model-type training \
-  --dashboard-url http://localhost:29876 \
+  --dashboard-url https://dashboard.llm360.ai/eval360 \
   --token <ingest-token>
 
 # Baseline model (single eval)
@@ -135,7 +137,7 @@ python viewer/backfill.py \
   --output-dir /path/to/Eval360-V2/output/gpt-4o/ \
   --model-id gpt-4o \
   --model-type baseline \
-  --dashboard-url http://localhost:29876 \
+  --dashboard-url https://dashboard.llm360.ai/eval360 \
   --token <ingest-token>
 ```
 
@@ -155,3 +157,8 @@ python viewer/backfill.py \
 | `GET /api/compare` | Multi-model comparison (`models`, `dataset` params) |
 | `GET /api/filters` | Distinct values for dropdowns |
 | `POST /api/ingest/eval-result` | Ingest scores (requires Bearer token) |
+
+## Related
+
+- [Eval360-V2](https://github.com/LLM360/Eval360-V2): Evaluation framework (scheduler + graders)
+- [rl360-snapshots](https://github.com/LLM360/rl360-snapshots): RL training dashboard (shares EC2 + domain)
