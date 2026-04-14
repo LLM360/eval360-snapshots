@@ -108,16 +108,30 @@ If ingest stops working and the scheduler reports HTTP 302, check that the Bypas
 
 ## Eval360-V2 auto-ingest
 
-Set these env vars in your Eval360-V2 scheduler environment:
+To enable dashboard logging for a model, add `dashboard_logging: true` to the model config YAML:
+
+```yaml
+remote_model:
+  base_name: k2-think-v2
+  path: LLM360/K2-Think-V2
+# ... other fields ...
+dashboard_logging: true   # opt-in to eval360 dashboard
+```
+
+That's it. When grading completes, the scheduler automatically POSTs scores to the dashboard. No env vars needed — the dashboard URL and token are read from a shared config file on Weka (`/mnt/weka/shrd/k2m/eval360/dashboard.env`).
+
+By default, `dashboard_logging` is `false` — models that don't set it won't log to the dashboard.
+
+The hook is implemented in `scheduler/dashboard_hook.py` in the [Eval360-V2 repo](https://github.com/LLM360/Eval360-V2).
+
+### Advanced: override dashboard URL
+
+Env vars take precedence over the shared config file if set:
 
 ```bash
 export EVAL360_DASHBOARD_URL=https://dashboard.llm360.ai/eval360
 export EVAL360_DASHBOARD_TOKEN=<your-ingest-token>
 ```
-
-Then run evals as normal. Results are automatically pushed to the dashboard when grading completes. The hook is a no-op when these vars are unset.
-
-The hook is implemented in `scheduler/dashboard_hook.py` in the [Eval360-V2 repo](https://github.com/LLM360/Eval360-V2).
 
 ## Backfill existing results
 
