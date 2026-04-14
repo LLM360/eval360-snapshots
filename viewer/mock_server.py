@@ -249,6 +249,116 @@ async def compare_models(
     return {"dataset": dataset, "models": list(result.values())}
 
 
+@app.get("/api/heatmap")
+async def get_heatmap():
+    datasets = sorted({e["dataset_name"] for e in EVAL_RESULTS if e["is_primary"]})
+    models_out = []
+    matrix = {}
+    seen = set()
+    # Training models first, then baselines
+    sorted_models = sorted(MODELS, key=lambda m: (0 if m["model_type"] == "training" else 1, m["model_id"]))
+    for m in sorted_models:
+        mid = m["model_id"]
+        if mid in seen:
+            continue
+        seen.add(mid)
+        models_out.append({
+            "model_id": mid, "display_name": m["display_name"],
+            "model_type": m["model_type"], "owner": m["owner"],
+        })
+        cp_ids = {c["checkpoint_id"] for c in CHECKPOINTS if c["model_id"] == mid}
+        best = {}
+        for e in EVAL_RESULTS:
+            if e["checkpoint_id"] in cp_ids and e["is_primary"]:
+                ds = e["dataset_name"]
+                if ds not in best or e["metric_value"] > best[ds]:
+                    best[ds] = e["metric_value"]
+        matrix[mid] = {ds: round(v, 4) for ds, v in best.items()}
+    return {"models": models_out, "datasets": datasets, "matrix": matrix}
+
+
+@app.get("/api/models/{model_id}/diagnosis")
+async def get_model_diagnosis(model_id: str):
+    model = next((m for m in MODELS if m["model_id"] == model_id), None)
+    if not model:
+        return JSONResponse({"error": "Model not found"}, status_code=404)
+    # Latest checkpoint
+    cps = sorted(
+        [c for c in CHECKPOINTS if c["model_id"] == model_id],
+        key=lambda c: c["training_step"] if c["training_step"] is not None else float("inf"),
+    )
+    if not cps:
+        return {"model_id": model_id, "scores": {}, "latest_checkpoint": None}
+    latest_cp = cps[-1] if cps[-1]["training_step"] is not None else cps[0]
+
+    # Latest primary scores
+    latest_scores = {}
+    for e in EVAL_RESULTS:
+        if e["checkpoint_id"] == latest_cp["checkpoint_id"] and e["is_primary"]:
+            latest_scores[e["dataset_name"]] = e
+
+    # Best baseline per dataset
+    baseline_map = {}
+    for m in MODELS:
+        if m["model_type"] != "baseline":
+            continue
+        bl_cps = {c["checkpoint_id"] for c in CHECKPOINTS if c["model_id"] == m["model_id"]}
+        for e in EVAL_RESULTS:
+            if e["checkpoint_id"] in bl_cps and e["is_primary"]:
+                ds = e["dataset_name"]
+                if ds not in baseline_map or e["metric_value"] > baseline_map[ds]["score"]:
+                    baseline_map[ds] = {"score": e["metric_value"], "model": m["display_name"]}
+
+    # Trend: last 5 checkpoints per dataset
+    recent_by_ds = {}
+    for cp in reversed(cps[-5:]):
+        for e in EVAL_RESULTS:
+            if e["checkpoint_id"] == cp["checkpoint_id"] and e["is_primary"]:
+                ds = e["dataset_name"]
+                if ds not in recent_by_ds:
+                    recent_by_ds[ds] = []
+                recent_by_ds[ds].append(e["metric_value"])
+
+    def compute_trend(values):
+        if len(values) < 2:
+            return "new"
+        delta = values[-1] - values[-2]
+        if delta > 0.02:
+            return "up"
+        if delta < -0.02:
+            return "down"
+        if len(values) >= 3:
+            long_delta = values[-1] - values[0]
+            if long_delta > 0.03:
+                return "up_slow"
+            if long_delta < -0.03:
+                return "down_slow"
+        return "flat"
+
+    scores = {}
+    for ds, e in latest_scores.items():
+        bl = baseline_map.get(ds, {})
+        val = e["metric_value"]
+        bl_score = bl.get("score")
+        scores[ds] = {
+            "value": round(val, 4),
+            "metric_name": e["metric_name"],
+            "baseline_best": round(bl_score, 4) if bl_score else None,
+            "baseline_model": bl.get("model"),
+            "gap": round(val - bl_score, 4) if bl_score else None,
+            "trend": compute_trend(recent_by_ds.get(ds, [])),
+        }
+
+    return {
+        "model_id": model_id,
+        "display_name": model["display_name"],
+        "model_type": model["model_type"],
+        "latest_checkpoint": latest_cp["checkpoint_id"],
+        "latest_step": latest_cp["training_step"],
+        "scores": scores,
+    }
+
+
 @app.get("/api/filters")
 async def get_filter_options():
     return {

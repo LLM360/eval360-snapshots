@@ -290,6 +290,152 @@ async def compare_models(
 
 
 # ---------------------------------------------------------------------------
+# Heatmap (all models × all datasets matrix)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/heatmap")
+async def get_heatmap():
+    """Return best primary score per (model, dataset) for the heatmap matrix."""
+    rows = await db.fetch(
+        """
+        SELECT m.model_id, m.display_name, m.model_type, m.owner,
+               e.dataset_name, MAX(e.metric_value) AS best_score
+        FROM models m
+        JOIN checkpoints c ON c.model_id = m.model_id
+        JOIN eval_results e ON e.checkpoint_id = c.checkpoint_id
+        WHERE e.is_primary = TRUE
+        GROUP BY m.model_id, m.display_name, m.model_type, m.owner, e.dataset_name
+        ORDER BY m.model_type DESC, m.model_id, e.dataset_name
+        """
+    )
+
+    datasets = sorted({r["dataset_name"] for r in rows})
+    models = []
+    matrix: dict[str, dict] = {}
+    seen = set()
+
+    for r in rows:
+        mid = r["model_id"]
+        if mid not in seen:
+            seen.add(mid)
+            models.append({
+                "model_id": mid, "display_name": r["display_name"],
+                "model_type": r["model_type"], "owner": r["owner"],
+            })
+        if mid not in matrix:
+            matrix[mid] = {}
+        matrix[mid][r["dataset_name"]] = round(r["best_score"], 4)
+
+    return {"models": models, "datasets": datasets, "matrix": matrix}
+
+
+# ---------------------------------------------------------------------------
+# Model diagnosis (gap analysis + trends)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/models/{model_id}/diagnosis")
+async def get_model_diagnosis(model_id: str):
+    """Return latest scores, baseline gaps, and trend indicators for a model."""
+    model = await db.fetchrow("SELECT * FROM models WHERE model_id = $1", model_id)
+    if not model:
+        return JSONResponse({"error": "Model not found"}, status_code=404)
+
+    # Latest checkpoint
+    latest_cp = await db.fetchrow(
+        "SELECT checkpoint_id, training_step FROM checkpoints "
+        "WHERE model_id = $1 ORDER BY training_step DESC NULLS LAST LIMIT 1",
+        model_id,
+    )
+    if not latest_cp:
+        return {"model_id": model_id, "scores": {}, "latest_checkpoint": None}
+
+    # Latest scores
+    latest_scores = await db.fetch(
+        "SELECT dataset_name, metric_name, metric_value FROM eval_results "
+        "WHERE checkpoint_id = $1 AND is_primary = TRUE",
+        latest_cp["checkpoint_id"],
+    )
+
+    # Best baseline per dataset
+    baselines = await db.fetch(
+        """
+        SELECT e.dataset_name, MAX(e.metric_value) AS best_score,
+               (array_agg(m.display_name ORDER BY e.metric_value DESC))[1] AS best_model
+        FROM eval_results e
+        JOIN checkpoints c ON c.checkpoint_id = e.checkpoint_id
+        JOIN models m ON m.model_id = c.model_id
+        WHERE m.model_type = 'baseline' AND e.is_primary = TRUE
+        GROUP BY e.dataset_name
+        """
+    )
+    baseline_map = {r["dataset_name"]: {"score": r["best_score"], "model": r["best_model"]} for r in baselines}
+
+    # Recent checkpoints for trend (last 5)
+    recent = await db.fetch(
+        """
+        SELECT c.training_step, e.dataset_name, e.metric_value
+        FROM eval_results e
+        JOIN checkpoints c ON c.checkpoint_id = e.checkpoint_id
+        WHERE c.model_id = $1 AND e.is_primary = TRUE
+        ORDER BY c.training_step DESC NULLS LAST
+        """,
+        model_id,
+    )
+
+    # Group recent by dataset, compute trend
+    recent_by_ds: dict[str, list] = {}
+    for r in recent:
+        ds = r["dataset_name"]
+        if ds not in recent_by_ds:
+            recent_by_ds[ds] = []
+        if len(recent_by_ds[ds]) < 5:
+            recent_by_ds[ds].append(r["metric_value"])
+
+    def compute_trend(values: list) -> str:
+        if len(values) < 2:
+            return "new"
+        # values are newest-first; compare latest vs 2nd-latest
+        delta = values[0] - values[1]
+        if delta > 0.02:
+            return "up"
+        if delta < -0.02:
+            return "down"
+        # Check longer trend if available
+        if len(values) >= 3:
+            long_delta = values[0] - values[-1]
+            if long_delta > 0.03:
+                return "up_slow"
+            if long_delta < -0.03:
+                return "down_slow"
+        return "flat"
+
+    scores = {}
+    for s in latest_scores:
+        ds = s["dataset_name"]
+        bl = baseline_map.get(ds, {})
+        val = s["metric_value"]
+        bl_score = bl.get("score")
+        gap = round(val - bl_score, 4) if bl_score is not None else None
+        scores[ds] = {
+            "value": round(val, 4),
+            "metric_name": s["metric_name"],
+            "baseline_best": round(bl_score, 4) if bl_score else None,
+            "baseline_model": bl.get("model"),
+            "gap": gap,
+            "trend": compute_trend(recent_by_ds.get(ds, [])),
+        }
+
+    return {
+        "model_id": model_id,
+        "display_name": dict(model)["display_name"],
+        "model_type": dict(model)["model_type"],
+        "latest_checkpoint": latest_cp["checkpoint_id"],
+        "latest_step": latest_cp["training_step"],
+        "scores": scores,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Filters (for dropdowns)
 # ---------------------------------------------------------------------------
 

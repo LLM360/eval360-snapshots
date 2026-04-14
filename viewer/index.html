@@ -1,280 +1,595 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Eval360 Dashboard</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eval360 — Model Diagnostics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+/* ===================================================================
+   DESIGN TOKENS
+   =================================================================== */
+:root {
+  --bg:         #0a0e14;
+  --bg-raised:  #0f1319;
+  --surface:    #141a22;
+  --surface-2:  #1a212b;
+  --border:     #1e2733;
+  --border-2:   #2a3444;
+  --text:       #d4dce8;
+  --text-bright:#f0f4f8;
+  --muted:      #6b7a8d;
+  --accent:     #4facfe;
+  --accent-dim: rgba(79,172,254,0.12);
+  --green:      #34d399;
+  --green-dim:  rgba(52,211,153,0.12);
+  --red:        #f87171;
+  --red-dim:    rgba(248,113,113,0.12);
+  --amber:      #fbbf24;
+  --amber-dim:  rgba(251,191,36,0.12);
+  --teal:       #2dd4bf;
+  --radius:     6px;
+  --radius-lg:  10px;
+  --font-body:  'Outfit', sans-serif;
+  --font-mono:  'JetBrains Mono', monospace;
+  --shadow:     0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-lg:  0 4px 12px rgba(0,0,0,0.5);
+}
 
-    :root {
-      --bg:       #0d1117;
-      --surface:  #161b22;
-      --border:   #30363d;
-      --text:     #e6edf3;
-      --muted:    #8b949e;
-      --green:    #3fb950;
-      --orange:   #d29922;
-      --blue:     #58a6ff;
-      --radius:   8px;
-    }
+/* ===================================================================
+   RESET & BASE
+   =================================================================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      font-size: 14px;
-      line-height: 1.5;
-      min-height: 100vh;
-    }
+body {
+  background: var(--bg);
+  background-image: radial-gradient(ellipse at 50% 0%, rgba(79,172,254,0.03) 0%, transparent 60%);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
 
-    /* ---- Nav ---- */
-    nav {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      padding: 0 24px;
-      height: 56px;
-      gap: 24px;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
 
-    .nav-title {
-      font-weight: 700;
-      font-size: 16px;
-      color: var(--text);
-      text-decoration: none;
-      letter-spacing: -0.2px;
-    }
+/* ===================================================================
+   NAV
+   =================================================================== */
+nav {
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 28px;
+  height: 52px;
+  gap: 28px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
 
-    .nav-tabs { display: flex; gap: 4px; }
+.nav-brand {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-bright);
+  text-decoration: none;
+  letter-spacing: -0.3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-    .nav-tab {
-      padding: 6px 14px;
-      border-radius: var(--radius);
-      color: var(--muted);
-      text-decoration: none;
-      font-weight: 500;
-      transition: color 0.15s, background 0.15s;
-    }
+.nav-brand::before {
+  content: '';
+  display: inline-block;
+  width: 18px; height: 18px;
+  background: linear-gradient(135deg, var(--accent), var(--teal));
+  border-radius: 4px;
+}
 
-    .nav-tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
-    .nav-tab.active { color: var(--text); background: rgba(88,166,255,0.12); }
+.nav-tabs { display: flex; gap: 2px; }
 
-    /* ---- Main ---- */
-    main {
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 32px 24px;
-    }
+.nav-tab {
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
 
-    /* ---- Cards grid ---- */
-    .card-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-      gap: 16px;
-    }
+.nav-tab:hover { color: var(--text); background: rgba(255,255,255,0.04); text-decoration: none; }
+.nav-tab.active { color: var(--accent); background: var(--accent-dim); }
 
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-      cursor: pointer;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
+/* ===================================================================
+   LAYOUT
+   =================================================================== */
+main {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 28px 28px 60px;
+}
 
-    .card:hover {
-      border-color: var(--blue);
-      box-shadow: 0 0 0 1px rgba(88,166,255,0.2);
-    }
+.page-enter {
+  animation: fadeUp 0.25s ease both;
+}
 
-    .card-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 8px;
-    }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
-    .card-name { font-weight: 600; font-size: 15px; }
+/* ===================================================================
+   SUMMARY STATS BAR
+   =================================================================== */
+.stats-bar {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
 
-    .badge {
-      font-size: 11px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 20px;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
+.stat-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
 
-    .badge-training {
-      background: rgba(63,185,80,0.15);
-      color: var(--green);
-      border: 1px solid rgba(63,185,80,0.3);
-    }
+.stat-value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--text-bright);
+}
 
-    .badge-baseline {
-      background: rgba(210,153,34,0.15);
-      color: var(--orange);
-      border: 1px solid rgba(210,153,34,0.3);
-    }
+.stat-label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 400;
+}
 
-    .card-meta { color: var(--muted); font-size: 13px; }
+/* ===================================================================
+   SECTION HEADINGS
+   =================================================================== */
+.section-head {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
 
-    /* ---- Model detail ---- */
-    .detail-header { margin-bottom: 28px; }
+/* ===================================================================
+   HEATMAP
+   =================================================================== */
+.heatmap-wrap {
+  overflow-x: auto;
+  margin-bottom: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
 
-    .detail-title {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 6px;
-    }
+.heatmap {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 700px;
+}
 
-    .detail-title h1 { font-size: 24px; font-weight: 700; }
+.heatmap th, .heatmap td {
+  padding: 10px 14px;
+  font-size: 13px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
 
-    .detail-meta { color: var(--muted); font-size: 13px; }
+.heatmap thead th {
+  background: var(--bg-raised);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 52px;
+  z-index: 10;
+}
 
-    .back-link {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      color: var(--blue);
-      text-decoration: none;
-      font-size: 13px;
-      margin-bottom: 20px;
-    }
+.heatmap tbody tr:last-child td { border-bottom: none; }
+.heatmap tbody tr:hover { background: rgba(255,255,255,0.02); }
 
-    .back-link:hover { text-decoration: underline; }
+.heatmap .model-cell {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-bright);
+  cursor: pointer;
+  min-width: 160px;
+}
 
-    /* ---- Compare controls ---- */
-    .compare-controls {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 28px;
-      flex-wrap: wrap;
-    }
+.heatmap .model-cell:hover { color: var(--accent); }
 
-    .compare-controls label { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.heatmap .type-separator td {
+  background: var(--bg);
+  padding: 4px 14px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
 
-    select {
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 6px 10px;
-      font-size: 13px;
-      outline: none;
-    }
+.score-cell {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 3px;
+  transition: transform 0.1s ease;
+}
 
-    select:focus { border-color: var(--blue); }
+.score-cell:hover { transform: scale(1.08); }
 
-    .select-multi { min-width: 200px; max-width: 320px; }
+.score-cell.best-in-col {
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
 
-    .btn {
-      background: var(--blue);
-      color: #0d1117;
-      border: none;
-      border-radius: var(--radius);
-      padding: 6px 16px;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.15s;
-    }
+/* ===================================================================
+   BADGES
+   =================================================================== */
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  display: inline-block;
+}
 
-    .btn:hover { opacity: 0.85; }
+.badge-training { background: var(--green-dim); color: var(--green); }
+.badge-baseline { background: var(--amber-dim); color: var(--amber); }
 
-    /* ---- Chart grid ---- */
-    .chart-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
-    }
+/* ===================================================================
+   CARD GRID (Models list)
+   =================================================================== */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 14px;
+}
 
-    @media (max-width: 800px) { .chart-grid { grid-template-columns: 1fr; } }
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
 
-    .chart-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-    }
+.card:hover {
+  border-color: var(--border-2);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
 
-    .chart-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
 
-    .chart-wrap { position: relative; height: 220px; }
+.card-name { font-weight: 600; font-size: 15px; color: var(--text-bright); }
+.card-meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 
-    /* ---- Leaderboard ---- */
-    .leaderboard-controls {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 24px;
-    }
+.card-scores {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
-    .leaderboard-controls label { color: var(--muted); font-size: 13px; }
+.card-score-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  font-size: 11px;
+}
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
+.card-score-chip .ds-name { color: var(--muted); }
 
-    thead th {
-      background: rgba(255,255,255,0.03);
-      text-align: left;
-      padding: 10px 16px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      border-bottom: 1px solid var(--border);
-    }
+.card-score-chip .ds-val {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 11px;
+}
 
-    tbody tr {
-      border-bottom: 1px solid var(--border);
-      transition: background 0.1s;
-    }
+/* ===================================================================
+   MODEL DETAIL
+   =================================================================== */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 18px;
+  transition: color 0.15s;
+}
 
-    tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: rgba(255,255,255,0.02); }
+.back-link:hover { color: var(--accent); text-decoration: none; }
 
-    tbody td { padding: 10px 16px; font-size: 13px; vertical-align: middle; }
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
 
-    .rank-cell { color: var(--muted); font-weight: 600; font-size: 13px; width: 40px; }
-    .score-cell { font-weight: 600; font-variant-numeric: tabular-nums; }
+.detail-title-group {}
 
-    a.model-link { color: var(--blue); text-decoration: none; }
-    a.model-link:hover { text-decoration: underline; }
+.detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
 
-    /* ---- Utility ---- */
-    .loading { text-align: center; padding: 48px 0; color: var(--muted); }
+.detail-title-row h1 {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-bright);
+  letter-spacing: -0.5px;
+}
 
-    .error-msg {
-      background: rgba(248,81,73,0.1);
-      border: 1px solid rgba(248,81,73,0.3);
-      color: #f85149;
-      border-radius: var(--radius);
-      padding: 12px 16px;
-      margin-bottom: 20px;
-    }
-  </style>
+.detail-meta { color: var(--muted); font-size: 13px; }
+
+/* ===================================================================
+   DIAGNOSTIC PANELS (2-column: radar + gap analysis)
+   =================================================================== */
+.diag-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+@media (max-width: 960px) { .diag-grid { grid-template-columns: 1fr; } }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+/* Radar chart */
+.radar-wrap { position: relative; height: 320px; }
+
+/* Gap analysis table */
+.gap-table { width: 100%; border-collapse: collapse; }
+
+.gap-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gap-table td {
+  padding: 8px 10px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gap-table tbody tr:last-child td { border-bottom: none; }
+
+.gap-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.gap-positive { color: var(--green); }
+.gap-negative { color: var(--red); }
+.gap-neutral  { color: var(--muted); }
+
+.trend-icon { font-size: 14px; }
+.trend-up        { color: var(--green); }
+.trend-up_slow   { color: var(--green); opacity: 0.7; }
+.trend-down      { color: var(--red); }
+.trend-down_slow { color: var(--red); opacity: 0.7; }
+.trend-flat      { color: var(--muted); }
+.trend-new       { color: var(--accent); }
+
+/* ===================================================================
+   COMPARE CONTROLS
+   =================================================================== */
+.compare-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.compare-bar label { color: var(--muted); font-size: 13px; font-weight: 500; }
+
+select {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+select:focus { border-color: var(--accent); }
+select option { background: var(--surface); }
+
+.btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius);
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn:hover { opacity: 0.9; box-shadow: 0 0 12px rgba(79,172,254,0.3); }
+
+/* ===================================================================
+   CHART GRID
+   =================================================================== */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 860px) { .chart-grid { grid-template-columns: 1fr; } }
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+}
+
+.chart-card h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
+.chart-wrap { position: relative; height: 210px; }
+
+/* ===================================================================
+   LEADERBOARD PIVOT
+   =================================================================== */
+.pivot-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.pivot {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 800px;
+}
+
+.pivot th, .pivot td {
+  padding: 10px 14px;
+  font-size: 13px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.pivot thead th {
+  background: var(--bg-raised);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  position: sticky;
+  top: 52px;
+  z-index: 10;
+}
+
+.pivot .model-col {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-bright);
+  min-width: 180px;
+}
+
+.pivot tbody tr:last-child td { border-bottom: none; }
+.pivot tbody tr:hover { background: rgba(255,255,255,0.02); }
+
+/* ===================================================================
+   UTILITIES
+   =================================================================== */
+.loading {
+  text-align: center;
+  padding: 48px 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.error-msg {
+  background: var(--red-dim);
+  border: 1px solid rgba(248,113,113,0.3);
+  color: var(--red);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--muted);
+}
+
+.stagger-1 { animation-delay: 0.03s; }
+.stagger-2 { animation-delay: 0.06s; }
+.stagger-3 { animation-delay: 0.09s; }
+.stagger-4 { animation-delay: 0.12s; }
+.stagger-5 { animation-delay: 0.15s; }
+.stagger-6 { animation-delay: 0.18s; }
+</style>
 </head>
 <body>
 
 <nav>
-  <a class="nav-title" href="#models">Eval360</a>
+  <a class="nav-brand" href="#observatory">Eval360</a>
   <div class="nav-tabs">
+    <a class="nav-tab" href="#observatory" data-tab="observatory">Observatory</a>
     <a class="nav-tab" href="#models" data-tab="models">Models</a>
     <a class="nav-tab" href="#leaderboard" data-tab="leaderboard">Leaderboard</a>
   </div>
@@ -285,304 +600,508 @@
 </main>
 
 <script>
-// ---------------------------------------------------------------------------
-// Color palette — consistent per model_id
-// ---------------------------------------------------------------------------
+/* ===================================================================
+   COLOR SYSTEM
+   =================================================================== */
 const PALETTE = [
-  '#58a6ff', '#3fb950', '#d29922', '#f78166', '#bc8cff',
-  '#39d353', '#ff7b72', '#79c0ff', '#ffa657', '#56d364',
+  '#4facfe','#34d399','#fbbf24','#f87171','#a78bfa',
+  '#38bdf8','#f472b6','#fb923c','#2dd4bf','#818cf8',
 ];
 const _colorMap = new Map();
 let _colorIdx = 0;
 
-function modelColor(modelId) {
-  if (!_colorMap.has(modelId)) {
-    _colorMap.set(modelId, PALETTE[_colorIdx % PALETTE.length]);
-    _colorIdx++;
-  }
-  return _colorMap.get(modelId);
+function modelColor(id) {
+  if (!_colorMap.has(id)) { _colorMap.set(id, PALETTE[_colorIdx++ % PALETTE.length]); }
+  return _colorMap.get(id);
 }
 
-// ---------------------------------------------------------------------------
-// Active Chart.js instances — destroy before re-render
-// ---------------------------------------------------------------------------
-let _activeCharts = [];
-
-function destroyCharts() {
-  for (const c of _activeCharts) {
-    try { c.destroy(); } catch (_) {}
-  }
-  _activeCharts = [];
+function scoreColor(v) {
+  if (v == null) return 'var(--muted)';
+  const hue = Math.round(v * 140);
+  return `hsl(${hue}, 65%, 55%)`;
 }
 
-// ---------------------------------------------------------------------------
-// API helpers
-// ---------------------------------------------------------------------------
-async function apiFetch(path) {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error('API ' + path + ' returned ' + res.status);
-  return res.json();
+function scoreBg(v) {
+  if (v == null) return 'transparent';
+  const hue = Math.round(v * 140);
+  return `hsla(${hue}, 65%, 55%, 0.12)`;
 }
 
-// ---------------------------------------------------------------------------
-// DOM helpers
-// ---------------------------------------------------------------------------
-function clearNode(node) {
-  while (node.firstChild) node.removeChild(node.firstChild);
+function gapClass(gap) {
+  if (gap == null) return 'gap-neutral';
+  if (gap > 0.005) return 'gap-positive';
+  if (gap < -0.005) return 'gap-negative';
+  return 'gap-neutral';
 }
+
+function trendIcon(t) {
+  const map = { up: '\u2191', up_slow: '\u2197', flat: '\u2192', down_slow: '\u2198', down: '\u2193', new: '\u2022' };
+  return map[t] || '\u2022';
+}
+
+/* ===================================================================
+   CHART MANAGEMENT
+   =================================================================== */
+let _charts = [];
+function destroyCharts() { _charts.forEach(c => { try { c.destroy(); } catch(_){} }); _charts = []; }
+
+/* Chart.js defaults */
+Chart.defaults.font.family = "'Outfit', sans-serif";
+Chart.defaults.color = '#6b7a8d';
+
+/* ===================================================================
+   DOM HELPERS
+   =================================================================== */
+function clearNode(n) { while (n.firstChild) n.removeChild(n.firstChild); }
 
 function el(tag, attrs, text) {
   const e = document.createElement(tag);
-  if (attrs) {
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'class') e.className = v;
-      else if (k === 'style') e.style.cssText = v;
-      else e.setAttribute(k, v);
-    }
+  if (attrs) for (const [k,v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'style') e.style.cssText = v;
+    else e.setAttribute(k, v);
   }
   if (text != null) e.textContent = text;
   return e;
 }
 
-function makeBadge(modelType) {
-  return el('span', { class: 'badge badge-' + modelType }, modelType);
+function makeBadge(t) { return el('span', {class: 'badge badge-' + t}, t); }
+
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error('API error: ' + r.status);
+  return r.json();
 }
 
-function showLoading(app, msg) {
-  clearNode(app);
-  app.appendChild(el('div', { class: 'loading' }, msg || 'Loading...'));
-}
-
-function showError(app, msg) {
-  clearNode(app);
-  app.appendChild(el('div', { class: 'error-msg' }, msg));
-}
-
-// ---------------------------------------------------------------------------
-// Nav / routing
-// ---------------------------------------------------------------------------
-function setActiveTab(tabName) {
-  document.querySelectorAll('.nav-tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.tab === tabName);
-  });
+/* ===================================================================
+   ROUTING
+   =================================================================== */
+function setTab(name) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
 }
 
 async function route() {
-  const hash = location.hash || '#models';
+  const hash = location.hash || '#observatory';
   const app = document.getElementById('app');
   destroyCharts();
-
-  if (hash.startsWith('#model/')) {
-    const modelId = decodeURIComponent(hash.slice('#model/'.length));
-    setActiveTab('models');
-    await renderModelDetail(app, modelId);
-  } else if (hash === '#leaderboard') {
-    setActiveTab('leaderboard');
-    await renderLeaderboard(app);
-  } else {
-    setActiveTab('models');
-    await renderModels(app);
+  try {
+    if (hash.startsWith('#model/')) {
+      const id = decodeURIComponent(hash.slice(7));
+      setTab('models');
+      await viewModelDetail(app, id);
+    } else if (hash === '#models') {
+      setTab('models');
+      await viewModels(app);
+    } else if (hash === '#leaderboard') {
+      setTab('leaderboard');
+      await viewLeaderboard(app);
+    } else {
+      setTab('observatory');
+      await viewObservatory(app);
+    }
+  } catch(e) {
+    clearNode(app);
+    app.appendChild(el('div', {class:'error-msg'}, e.message));
   }
 }
 
 window.addEventListener('hashchange', route);
 window.addEventListener('DOMContentLoaded', route);
 
-// ---------------------------------------------------------------------------
-// View: Models list
-// ---------------------------------------------------------------------------
-async function renderModels(app) {
-  showLoading(app, 'Loading models...');
-  let data;
-  try {
-    data = await apiFetch('/api/models');
-  } catch (e) {
-    showError(app, e.message);
-    return;
+/* ===================================================================
+   VIEW: OBSERVATORY (heatmap home)
+   =================================================================== */
+async function viewObservatory(app) {
+  clearNode(app);
+  const wrap = el('div', {class:'page-enter'});
+  app.appendChild(wrap);
+
+  wrap.appendChild(el('div', {class:'loading'}, 'Loading observatory...'));
+  const data = await api('/api/heatmap');
+  clearNode(wrap);
+
+  // Stats bar
+  const statsBar = el('div', {class:'stats-bar'});
+  const trainCount = data.models.filter(m => m.model_type === 'training').length;
+  const baseCount = data.models.filter(m => m.model_type === 'baseline').length;
+  [[data.models.length, 'models'], [trainCount, 'training'], [baseCount, 'baselines'], [data.datasets.length, 'benchmarks']].forEach(([v, l]) => {
+    const item = el('div', {class:'stat-item'});
+    item.appendChild(el('span', {class:'stat-value'}, String(v)));
+    item.appendChild(el('span', {class:'stat-label'}, l));
+    statsBar.appendChild(item);
+  });
+  wrap.appendChild(statsBar);
+
+  wrap.appendChild(el('div', {class:'section-head'}, 'Performance Heatmap'));
+
+  // Find best score per dataset for highlighting
+  const bestPerDs = {};
+  for (const ds of data.datasets) {
+    let best = -1;
+    for (const m of data.models) {
+      const v = (data.matrix[m.model_id] || {})[ds];
+      if (v != null && v > best) best = v;
+    }
+    bestPerDs[ds] = best;
   }
 
-  clearNode(app);
-  const grid = el('div', { class: 'card-grid' });
+  // Build heatmap table
+  const tableWrap = el('div', {class:'heatmap-wrap'});
+  const table = document.createElement('table');
+  table.className = 'heatmap';
+
+  // Header
+  const thead = document.createElement('thead');
+  const hRow = document.createElement('tr');
+  hRow.appendChild(el('th', {style:'text-align:left'}, 'Model'));
+  hRow.appendChild(el('th', null, 'Type'));
+  for (const ds of data.datasets) hRow.appendChild(el('th', null, ds));
+  thead.appendChild(hRow);
+  table.appendChild(thead);
+
+  // Body
+  const tbody = document.createElement('tbody');
+  let lastType = null;
 
   for (const m of data.models) {
-    const card = el('div', { class: 'card' });
+    // Type separator row
+    if (m.model_type !== lastType) {
+      lastType = m.model_type;
+      const sepRow = document.createElement('tr');
+      sepRow.className = 'type-separator';
+      const sepTd = document.createElement('td');
+      sepTd.colSpan = data.datasets.length + 2;
+      sepTd.textContent = m.model_type === 'training' ? 'Training Models' : 'Baselines';
+      sepRow.appendChild(sepTd);
+      tbody.appendChild(sepRow);
+    }
 
-    const header = el('div', { class: 'card-header' });
-    header.appendChild(el('span', { class: 'card-name' }, m.display_name));
+    const tr = document.createElement('tr');
+
+    // Model name
+    const nameTd = document.createElement('td');
+    nameTd.className = 'model-cell';
+    nameTd.textContent = m.display_name;
+    nameTd.addEventListener('click', () => { location.hash = '#model/' + encodeURIComponent(m.model_id); });
+    tr.appendChild(nameTd);
+
+    // Type badge
+    const typeTd = document.createElement('td');
+    typeTd.appendChild(makeBadge(m.model_type));
+    tr.appendChild(typeTd);
+
+    // Score cells
+    const scores = data.matrix[m.model_id] || {};
+    for (const ds of data.datasets) {
+      const td = document.createElement('td');
+      td.className = 'score-cell';
+      const v = scores[ds];
+      if (v != null) {
+        td.textContent = v.toFixed(2);
+        td.style.color = scoreColor(v);
+        td.style.background = scoreBg(v);
+        if (Math.abs(v - bestPerDs[ds]) < 0.0001) td.classList.add('best-in-col');
+      } else {
+        td.textContent = '\u2014';
+        td.style.color = 'var(--muted)';
+      }
+      tr.appendChild(td);
+    }
+
+    tbody.appendChild(tr);
+  }
+
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  wrap.appendChild(tableWrap);
+}
+
+/* ===================================================================
+   VIEW: MODELS LIST (with score chips)
+   =================================================================== */
+async function viewModels(app) {
+  clearNode(app);
+  const wrap = el('div', {class:'page-enter'});
+  app.appendChild(wrap);
+  wrap.appendChild(el('div', {class:'loading'}, 'Loading models...'));
+
+  const [modelsData, heatmapData] = await Promise.all([api('/api/models'), api('/api/heatmap')]);
+  clearNode(wrap);
+
+  const grid = el('div', {class:'card-grid'});
+
+  for (let i = 0; i < modelsData.models.length; i++) {
+    const m = modelsData.models[i];
+    const card = el('div', {class:'card page-enter stagger-' + Math.min(i+1, 6)});
+
+    const header = el('div', {class:'card-header'});
+    header.appendChild(el('span', {class:'card-name'}, m.display_name));
     header.appendChild(makeBadge(m.model_type));
-
-    const meta = el('div', { class: 'card-meta' });
-    meta.textContent = 'Owner: ' + m.owner + ' \u00b7 ' + m.checkpoint_count + ' checkpoints \u00b7 ' + m.dataset_count + ' datasets';
-
     card.appendChild(header);
-    card.appendChild(meta);
 
-    card.addEventListener('click', () => {
-      location.hash = '#model/' + encodeURIComponent(m.model_id);
-    });
+    card.appendChild(el('div', {class:'card-meta'},
+      'Owner: ' + m.owner + ' \u00b7 ' + m.checkpoint_count + ' checkpoints \u00b7 ' + m.dataset_count + ' datasets'));
 
+    // Score preview chips
+    const scores = heatmapData.matrix[m.model_id] || {};
+    const chipWrap = el('div', {class:'card-scores'});
+    const entries = Object.entries(scores).sort((a,b) => a[0].localeCompare(b[0])).slice(0, 6);
+    for (const [ds, v] of entries) {
+      const chip = el('div', {class:'card-score-chip'});
+      chip.appendChild(el('span', {class:'ds-name'}, ds));
+      const valSpan = el('span', {class:'ds-val'}, v.toFixed(2));
+      valSpan.style.color = scoreColor(v);
+      chip.appendChild(valSpan);
+      chipWrap.appendChild(chip);
+    }
+    card.appendChild(chipWrap);
+
+    card.addEventListener('click', () => { location.hash = '#model/' + encodeURIComponent(m.model_id); });
     grid.appendChild(card);
   }
 
-  app.appendChild(grid);
+  wrap.appendChild(grid);
 }
 
-// ---------------------------------------------------------------------------
-// View: Model detail
-// ---------------------------------------------------------------------------
-async function renderModelDetail(app, modelId) {
-  showLoading(app, 'Loading model...');
-
-  let modelData, scoresData, allModelsData;
-  try {
-    [modelData, scoresData, allModelsData] = await Promise.all([
-      apiFetch('/api/models/' + encodeURIComponent(modelId)),
-      apiFetch('/api/models/' + encodeURIComponent(modelId) + '/scores'),
-      apiFetch('/api/models'),
-    ]);
-  } catch (e) {
-    showError(app, e.message);
-    return;
-  }
-
-  const { model } = modelData;
-
-  // Assign colors: primary model first so it reliably gets palette[0]
-  modelColor(modelId);
-  for (const m of allModelsData.models) modelColor(m.model_id);
-
-  // Build dataset map from primary scores
-  const primaryScores = scoresData.scores.filter(s => s.is_primary);
-  const datasetMap = new Map();
-  for (const s of primaryScores) {
-    if (!datasetMap.has(s.dataset_name)) datasetMap.set(s.dataset_name, []);
-    datasetMap.get(s.dataset_name).push(s);
-  }
-  for (const pts of datasetMap.values()) {
-    pts.sort((a, b) => (a.training_step == null ? Infinity : a.training_step) - (b.training_step == null ? Infinity : b.training_step));
-  }
-  const datasets = [...datasetMap.keys()].sort();
-
+/* ===================================================================
+   VIEW: MODEL DETAIL (radar + gap + curves)
+   =================================================================== */
+async function viewModelDetail(app, modelId) {
   clearNode(app);
+  const wrap = el('div', {class:'page-enter'});
+  app.appendChild(wrap);
+  wrap.appendChild(el('div', {class:'loading'}, 'Loading diagnosis...'));
+
+  const [modelData, scoresData, diagData, allModels] = await Promise.all([
+    api('/api/models/' + encodeURIComponent(modelId)),
+    api('/api/models/' + encodeURIComponent(modelId) + '/scores'),
+    api('/api/models/' + encodeURIComponent(modelId) + '/diagnosis'),
+    api('/api/models'),
+  ]);
+  clearNode(wrap);
+
+  modelColor(modelId);
+  for (const m of allModels.models) modelColor(m.model_id);
+
+  const model = modelData.model;
 
   // Back link
-  const back = el('a', { class: 'back-link', href: '#models' }, '\u2190 Back to Models');
-  app.appendChild(back);
+  wrap.appendChild(el('a', {class:'back-link', href:'#models'}, '\u2190 All Models'));
 
   // Header
-  const header = el('div', { class: 'detail-header' });
-  const titleRow = el('div', { class: 'detail-title' });
+  const hdr = el('div', {class:'detail-header'});
+  const titleGrp = el('div', {class:'detail-title-group'});
+  const titleRow = el('div', {class:'detail-title-row'});
   titleRow.appendChild(el('h1', null, model.display_name));
   titleRow.appendChild(makeBadge(model.model_type));
+  titleGrp.appendChild(titleRow);
+  const stepText = diagData.latest_step ? ' \u00b7 Latest: step ' + diagData.latest_step : '';
+  titleGrp.appendChild(el('div', {class:'detail-meta'},
+    'Owner: ' + model.owner + ' \u00b7 ' + modelData.checkpoints.length + ' checkpoints' + stepText));
+  hdr.appendChild(titleGrp);
+  wrap.appendChild(hdr);
 
-  const cpCount = modelData.checkpoints.length;
-  const metaLine = el('div', { class: 'detail-meta' });
-  metaLine.textContent = 'Owner: ' + model.owner + ' \u00b7 ' + cpCount + ' checkpoints \u00b7 ' + datasets.length + ' datasets';
+  // Diagnostic panels: radar + gap analysis
+  const diagGrid = el('div', {class:'diag-grid'});
 
-  header.appendChild(titleRow);
-  header.appendChild(metaLine);
-  app.appendChild(header);
+  // -- Radar Chart --
+  const radarPanel = el('div', {class:'panel'});
+  radarPanel.appendChild(el('div', {class:'panel-title'}, 'Capability Profile'));
+  const radarWrap = el('div', {class:'radar-wrap'});
+  const radarCanvas = document.createElement('canvas');
+  radarWrap.appendChild(radarCanvas);
+  radarPanel.appendChild(radarWrap);
+  diagGrid.appendChild(radarPanel);
+
+  // -- Gap Analysis --
+  const gapPanel = el('div', {class:'panel'});
+  gapPanel.appendChild(el('div', {class:'panel-title'}, 'Gap Analysis vs Best Baseline'));
+  const gapTable = document.createElement('table');
+  gapTable.className = 'gap-table';
+
+  const gHead = document.createElement('thead');
+  const gHRow = document.createElement('tr');
+  ['Benchmark', 'Score', 'Best Baseline', 'Gap', 'Trend'].forEach(c => gHRow.appendChild(el('th', null, c)));
+  gHead.appendChild(gHRow);
+  gapTable.appendChild(gHead);
+
+  const gBody = document.createElement('tbody');
+  const sortedDs = Object.entries(diagData.scores).sort((a, b) => (a[1].gap || 0) - (b[1].gap || 0));
+
+  for (const [ds, info] of sortedDs) {
+    const tr = document.createElement('tr');
+
+    tr.appendChild(el('td', {style:'font-weight:500;color:var(--text-bright)'}, ds));
+
+    const valTd = el('td', {class:'gap-value'});
+    valTd.textContent = info.value.toFixed(4);
+    valTd.style.color = scoreColor(info.value);
+    tr.appendChild(valTd);
+
+    const blTd = document.createElement('td');
+    if (info.baseline_best != null) {
+      blTd.appendChild(el('span', {class:'gap-value', style:'color:var(--muted)'}, info.baseline_best.toFixed(4)));
+      blTd.appendChild(document.createTextNode(' '));
+      blTd.appendChild(el('span', {style:'font-size:11px;color:var(--muted)'}, info.baseline_model || ''));
+    } else {
+      blTd.textContent = '\u2014';
+    }
+    tr.appendChild(blTd);
+
+    const gapTd = el('td', {class:'gap-value ' + gapClass(info.gap)});
+    gapTd.textContent = info.gap != null ? (info.gap > 0 ? '+' : '') + info.gap.toFixed(4) : '\u2014';
+    tr.appendChild(gapTd);
+
+    const trendTd = el('td', {class:'trend-icon trend-' + info.trend});
+    trendTd.textContent = trendIcon(info.trend);
+    tr.appendChild(trendTd);
+
+    gBody.appendChild(tr);
+  }
+
+  gapTable.appendChild(gBody);
+  gapPanel.appendChild(gapTable);
+  diagGrid.appendChild(gapPanel);
+  wrap.appendChild(diagGrid);
+
+  // Render radar chart
+  const radarLabels = sortedDs.map(([ds]) => ds);
+  const radarValues = sortedDs.map(([_, info]) => info.value);
+  const radarBaseline = sortedDs.map(([_, info]) => info.baseline_best || 0);
+
+  const radarChart = new Chart(radarCanvas, {
+    type: 'radar',
+    data: {
+      labels: radarLabels,
+      datasets: [
+        {
+          label: model.display_name,
+          data: radarValues,
+          borderColor: modelColor(modelId),
+          backgroundColor: modelColor(modelId) + '22',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: modelColor(modelId),
+        },
+        {
+          label: 'Best Baseline',
+          data: radarBaseline,
+          borderColor: '#6b7a8d',
+          backgroundColor: 'rgba(107,122,141,0.08)',
+          borderWidth: 1.5,
+          borderDash: [4, 3],
+          pointRadius: 3,
+          pointBackgroundColor: '#6b7a8d',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        r: {
+          beginAtZero: true,
+          max: 1,
+          ticks: { stepSize: 0.2, color: '#4a5568', font: { size: 10 }, backdropColor: 'transparent' },
+          grid: { color: '#1e2733' },
+          angleLines: { color: '#1e2733' },
+          pointLabels: { color: '#8b9bb0', font: { size: 11, family: 'Outfit' } },
+        },
+      },
+      plugins: {
+        legend: { labels: { color: '#d4dce8', boxWidth: 12, font: { size: 12 } } },
+        tooltip: { backgroundColor: '#141a22', borderColor: '#2a3444', borderWidth: 1, titleColor: '#f0f4f8', bodyColor: '#8b9bb0' },
+      },
+    },
+  });
+  _charts.push(radarChart);
 
   // Compare controls
-  const compareWrap = el('div', { class: 'compare-controls' });
-  compareWrap.appendChild(el('label', null, 'Compare with...'));
-
+  const compareBar = el('div', {class:'compare-bar'});
+  compareBar.appendChild(el('label', null, 'Compare with...'));
   const compareSelect = document.createElement('select');
-  compareSelect.className = 'select-multi';
   compareSelect.multiple = true;
-  compareSelect.size = Math.min(6, Math.max(2, allModelsData.models.length - 1));
-
-  for (const m of allModelsData.models) {
+  compareSelect.size = Math.min(5, Math.max(2, allModels.models.length - 1));
+  compareSelect.style.minWidth = '220px';
+  for (const m of allModels.models) {
     if (m.model_id === modelId) continue;
     const opt = document.createElement('option');
     opt.value = m.model_id;
     opt.textContent = m.display_name + ' (' + m.model_type + ')';
     compareSelect.appendChild(opt);
   }
+  compareBar.appendChild(compareSelect);
+  const updateBtn = el('button', {class:'btn'}, 'Update Charts');
+  compareBar.appendChild(updateBtn);
+  wrap.appendChild(compareBar);
 
-  const updateBtn = el('button', { class: 'btn' }, 'Update');
-  compareWrap.appendChild(compareSelect);
-  compareWrap.appendChild(updateBtn);
-  app.appendChild(compareWrap);
+  // Section head for training curves
+  wrap.appendChild(el('div', {class:'section-head'}, 'Training Curves'));
 
   // Chart grid
-  const chartGrid = el('div', { class: 'chart-grid' });
-  app.appendChild(chartGrid);
+  const chartGrid = el('div', {class:'chart-grid'});
+  wrap.appendChild(chartGrid);
 
-  // Compute x-range of primary model for baseline horizontal lines
-  let allSteps = [];
-  for (const pts of datasetMap.values()) {
-    for (const p of pts) {
-      if (p.training_step != null) allSteps.push(p.training_step);
-    }
+  // Build dataset map
+  const primaryScores = scoresData.scores.filter(s => s.is_primary);
+  const dsMap = new Map();
+  for (const s of primaryScores) {
+    if (!dsMap.has(s.dataset_name)) dsMap.set(s.dataset_name, []);
+    dsMap.get(s.dataset_name).push(s);
   }
+  for (const pts of dsMap.values()) pts.sort((a,b) => (a.training_step ?? Infinity) - (b.training_step ?? Infinity));
+  const datasets = [...dsMap.keys()].sort();
+
+  // x-range for baselines
+  let allSteps = [];
+  for (const pts of dsMap.values()) for (const p of pts) if (p.training_step != null) allSteps.push(p.training_step);
   const xMin = allSteps.length ? Math.min(...allSteps) : 0;
   const xMax = allSteps.length ? Math.max(...allSteps) : 1;
 
-  async function renderCharts(compareIds) {
-    destroyCharts();
+  async function renderCurves(compareIds) {
+    // Destroy only line charts, keep radar
+    const keep = [radarChart];
+    _charts.filter(c => !keep.includes(c)).forEach(c => { try { c.destroy(); } catch(_){} });
+    _charts = [...keep];
     clearNode(chartGrid);
 
-    if (datasets.length === 0) {
-      chartGrid.appendChild(el('div', { class: 'loading' }, 'No eval results found.'));
-      return;
-    }
-
-    // Fetch compare data per dataset if needed
-    let compareByDataset = {};
+    let compareByDs = {};
     if (compareIds.length > 0) {
       const allIds = [modelId, ...compareIds].join(',');
       const results = await Promise.allSettled(
-        datasets.map(ds =>
-          apiFetch('/api/compare?models=' + encodeURIComponent(allIds) + '&dataset=' + encodeURIComponent(ds))
-        )
+        datasets.map(ds => api('/api/compare?models=' + encodeURIComponent(allIds) + '&dataset=' + encodeURIComponent(ds)))
       );
-      datasets.forEach((ds, i) => {
-        if (results[i].status === 'fulfilled') compareByDataset[ds] = results[i].value;
-      });
+      datasets.forEach((ds, i) => { if (results[i].status === 'fulfilled') compareByDs[ds] = results[i].value; });
     }
 
     for (const dsName of datasets) {
-      const pts = datasetMap.get(dsName) || [];
-
-      const card = el('div', { class: 'chart-card' });
+      const pts = dsMap.get(dsName) || [];
+      const card = el('div', {class:'chart-card'});
       card.appendChild(el('h3', null, dsName));
-
-      const wrap = el('div', { class: 'chart-wrap' });
+      const cw = el('div', {class:'chart-wrap'});
       const canvas = document.createElement('canvas');
-      wrap.appendChild(canvas);
-      card.appendChild(wrap);
+      cw.appendChild(canvas);
+      card.appendChild(cw);
       chartGrid.appendChild(card);
 
       const chartDatasets = [];
 
-      if (compareIds.length > 0 && compareByDataset[dsName]) {
-        for (const mEntry of compareByDataset[dsName].models) {
+      if (compareIds.length > 0 && compareByDs[dsName]) {
+        for (const mEntry of compareByDs[dsName].models) {
           const color = modelColor(mEntry.model_id);
-          if (mEntry.model_type === 'baseline') {
-            const val = mEntry.data_points[0] != null ? mEntry.data_points[0].metric_value : null;
-            if (val == null) continue;
+          if (mEntry.model_type === 'baseline' && mEntry.data_points.length > 0) {
+            const val = mEntry.data_points[0].metric_value;
             chartDatasets.push({
-              label: mEntry.display_name,
-              data: [{ x: xMin, y: val }, { x: xMax, y: val }],
-              borderColor: color,
-              backgroundColor: color + '33',
-              borderDash: [6, 4],
-              borderWidth: 2,
-              pointRadius: 0,
-              pointHoverRadius: 4,
-              tension: 0,
+              label: mEntry.display_name, data: [{x:xMin,y:val},{x:xMax,y:val}],
+              borderColor: color, backgroundColor: color+'22', borderDash:[6,4], borderWidth:1.5,
+              pointRadius:0, pointHoverRadius:3, tension:0,
             });
           } else {
             chartDatasets.push({
               label: mEntry.display_name,
-              data: mEntry.data_points.map(p => ({ x: p.training_step, y: p.metric_value })),
-              borderColor: color,
-              backgroundColor: color + '33',
-              borderWidth: 2,
-              pointRadius: 3,
-              pointHoverRadius: 5,
-              tension: 0.3,
+              data: mEntry.data_points.map(p => ({x:p.training_step, y:p.metric_value})),
+              borderColor: color, backgroundColor: color+'22', borderWidth:2,
+              pointRadius:2.5, pointHoverRadius:5, tension:0.3,
             });
           }
         }
@@ -590,164 +1109,164 @@ async function renderModelDetail(app, modelId) {
         const color = modelColor(modelId);
         chartDatasets.push({
           label: model.display_name,
-          data: pts.map(p => ({ x: p.training_step, y: p.metric_value })),
-          borderColor: color,
-          backgroundColor: color + '33',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointHoverRadius: 5,
-          tension: 0.3,
+          data: pts.map(p => ({x:p.training_step, y:p.metric_value})),
+          borderColor: color, backgroundColor: color+'22', borderWidth:2,
+          pointRadius:2.5, pointHoverRadius:5, tension:0.3,
         });
       }
+
+      // Auto-scale y-axis
+      let yVals = chartDatasets.flatMap(d => d.data.map(p => p.y));
+      let yMin = Math.max(0, Math.floor((Math.min(...yVals) - 0.05) * 10) / 10);
+      let yMax = Math.min(1, Math.ceil((Math.max(...yVals) + 0.05) * 10) / 10);
 
       const chart = new Chart(canvas, {
         type: 'line',
         data: { datasets: chartDatasets },
         options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: false,
+          responsive: true, maintainAspectRatio: false,
+          animation: { duration: 300 },
           interaction: { mode: 'index', intersect: false },
           scales: {
-            x: {
-              type: 'linear',
-              ticks: { color: '#8b949e', maxTicksLimit: 6 },
-              grid: { color: '#30363d' },
-            },
-            y: {
-              min: 0,
-              max: 1,
-              ticks: { color: '#8b949e', maxTicksLimit: 6 },
-              grid: { color: '#30363d' },
-            },
+            x: { type:'linear', ticks:{color:'#6b7a8d', maxTicksLimit:6, font:{size:11}}, grid:{color:'#1e2733'} },
+            y: { min:yMin, max:yMax, ticks:{color:'#6b7a8d', maxTicksLimit:5, font:{size:11,family:'JetBrains Mono'}}, grid:{color:'#1e2733'} },
           },
           plugins: {
-            legend: {
-              labels: { color: '#e6edf3', boxWidth: 14, font: { size: 12 } },
-            },
+            legend: { labels:{color:'#d4dce8', boxWidth:12, font:{size:11}} },
             tooltip: {
-              callbacks: {
-                label(ctx) {
-                  const raw = ctx.raw;
-                  const val = typeof raw.y === 'number' ? raw.y.toFixed(4) : '?';
-                  const stepStr = raw.x != null ? ' (step ' + raw.x + ')' : '';
-                  return ctx.dataset.label + ': ' + val + stepStr;
-                },
-              },
-              backgroundColor: '#161b22',
-              borderColor: '#30363d',
-              borderWidth: 1,
-              titleColor: '#e6edf3',
-              bodyColor: '#8b949e',
+              backgroundColor:'#141a22', borderColor:'#2a3444', borderWidth:1, titleColor:'#f0f4f8', bodyColor:'#8b9bb0',
+              callbacks: { label(ctx) { const r=ctx.raw; return ctx.dataset.label+': '+r.y.toFixed(4)+(r.x!=null?' (step '+r.x+')':''); } },
             },
           },
         },
       });
-
-      _activeCharts.push(chart);
+      _charts.push(chart);
     }
   }
 
-  await renderCharts([]);
-
+  await renderCurves([]);
   updateBtn.addEventListener('click', async () => {
-    const selected = Array.from(compareSelect.selectedOptions).map(o => o.value);
-    await renderCharts(selected);
+    const sel = Array.from(compareSelect.selectedOptions).map(o => o.value);
+    await renderCurves(sel);
   });
 }
 
-// ---------------------------------------------------------------------------
-// View: Leaderboard
-// ---------------------------------------------------------------------------
-async function renderLeaderboard(app) {
-  showLoading(app, 'Loading filters...');
-  let filtersData;
-  try {
-    filtersData = await apiFetch('/api/filters');
-  } catch (e) {
-    showError(app, e.message);
-    return;
-  }
-
+/* ===================================================================
+   VIEW: LEADERBOARD (pivot heatmap)
+   =================================================================== */
+async function viewLeaderboard(app) {
   clearNode(app);
+  const wrap = el('div', {class:'page-enter'});
+  app.appendChild(wrap);
+  wrap.appendChild(el('div', {class:'loading'}, 'Loading leaderboard...'));
 
-  const controls = el('div', { class: 'leaderboard-controls' });
-  controls.appendChild(el('label', null, 'Dataset:'));
+  const data = await api('/api/heatmap');
+  clearNode(wrap);
 
-  const dsSelect = document.createElement('select');
-  for (const ds of filtersData.datasets) {
+  wrap.appendChild(el('div', {class:'section-head'}, 'All Models \u00d7 All Benchmarks'));
+
+  // Sort control
+  const sortBar = el('div', {class:'compare-bar'});
+  sortBar.appendChild(el('label', null, 'Sort by:'));
+  const sortSelect = document.createElement('select');
+  const defaultOpt = document.createElement('option');
+  defaultOpt.value = '';
+  defaultOpt.textContent = 'Default';
+  sortSelect.appendChild(defaultOpt);
+  for (const ds of data.datasets) {
     const opt = document.createElement('option');
     opt.value = ds;
     opt.textContent = ds;
-    dsSelect.appendChild(opt);
+    sortSelect.appendChild(opt);
   }
-  controls.appendChild(dsSelect);
-  app.appendChild(controls);
+  sortBar.appendChild(sortSelect);
+  wrap.appendChild(sortBar);
 
-  const tableWrap = el('div', null);
-  app.appendChild(tableWrap);
+  const tableContainer = el('div');
+  wrap.appendChild(tableContainer);
 
-  async function loadLeaderboard(dsName) {
-    clearNode(tableWrap);
-    tableWrap.appendChild(el('div', { class: 'loading' }, 'Loading leaderboard...'));
-    let data;
-    try {
-      data = await apiFetch('/api/datasets/' + encodeURIComponent(dsName) + '/leaderboard');
-    } catch (e) {
-      clearNode(tableWrap);
-      tableWrap.appendChild(el('div', { class: 'error-msg' }, e.message));
-      return;
+  // Best per column
+  const bestPerDs = {};
+  for (const ds of data.datasets) {
+    let best = -1;
+    for (const m of data.models) {
+      const v = (data.matrix[m.model_id] || {})[ds];
+      if (v != null && v > best) best = v;
     }
+    bestPerDs[ds] = best;
+  }
 
-    clearNode(tableWrap);
+  function renderPivot(sortDs) {
+    clearNode(tableContainer);
+    const pivotWrap = el('div', {class:'pivot-wrap'});
     const table = document.createElement('table');
+    table.className = 'pivot';
 
     const thead = document.createElement('thead');
     const hRow = document.createElement('tr');
-    for (const col of ['#', 'Model', 'Type', 'Score', 'Checkpoint', 'Step']) {
-      hRow.appendChild(el('th', null, col));
+    hRow.appendChild(el('th', {style:'text-align:left'}, 'Model'));
+    hRow.appendChild(el('th', null, 'Type'));
+    for (const ds of data.datasets) {
+      const th = el('th', null, ds);
+      if (ds === sortDs) th.style.color = 'var(--accent)';
+      hRow.appendChild(th);
     }
     thead.appendChild(hRow);
     table.appendChild(thead);
 
+    // Sort models
+    let sorted = [...data.models];
+    if (sortDs) {
+      sorted.sort((a, b) => {
+        const va = (data.matrix[a.model_id] || {})[sortDs] ?? -1;
+        const vb = (data.matrix[b.model_id] || {})[sortDs] ?? -1;
+        return vb - va;
+      });
+    }
+
     const tbody = document.createElement('tbody');
-    data.leaderboard.forEach((entry, idx) => {
+    for (const m of sorted) {
       const tr = document.createElement('tr');
 
-      const rankTd = el('td', { class: 'rank-cell' }, String(idx + 1));
-      tr.appendChild(rankTd);
-
       const nameTd = document.createElement('td');
-      const nameLink = el('a', { class: 'model-link', href: '#model/' + encodeURIComponent(entry.model_id) }, entry.display_name);
-      nameTd.appendChild(nameLink);
+      nameTd.className = 'model-col';
+      const link = el('a', {href:'#model/' + encodeURIComponent(m.model_id), style:'color:var(--text-bright);text-decoration:none'}, m.display_name);
+      link.addEventListener('mouseover', () => link.style.color = 'var(--accent)');
+      link.addEventListener('mouseout', () => link.style.color = 'var(--text-bright)');
+      nameTd.appendChild(link);
       tr.appendChild(nameTd);
 
       const typeTd = document.createElement('td');
-      typeTd.appendChild(makeBadge(entry.model_type));
+      typeTd.appendChild(makeBadge(m.model_type));
       tr.appendChild(typeTd);
 
-      const scoreVal = typeof entry.metric_value === 'number' ? entry.metric_value.toFixed(4) : String(entry.metric_value);
-      tr.appendChild(el('td', { class: 'score-cell' }, scoreVal));
-
-      const cpTd = el('td', { style: 'color:var(--muted);font-family:monospace;font-size:12px' }, entry.checkpoint_id);
-      tr.appendChild(cpTd);
-
-      const stepVal = entry.training_step != null ? String(entry.training_step) : '\u2014';
-      tr.appendChild(el('td', { style: 'color:var(--muted)' }, stepVal));
+      const scores = data.matrix[m.model_id] || {};
+      for (const ds of data.datasets) {
+        const td = document.createElement('td');
+        td.className = 'score-cell';
+        const v = scores[ds];
+        if (v != null) {
+          td.textContent = v.toFixed(2);
+          td.style.color = scoreColor(v);
+          td.style.background = scoreBg(v);
+          if (Math.abs(v - bestPerDs[ds]) < 0.0001) td.classList.add('best-in-col');
+        } else {
+          td.textContent = '\u2014';
+          td.style.color = 'var(--muted)';
+        }
+        tr.appendChild(td);
+      }
 
       tbody.appendChild(tr);
-    });
+    }
+
     table.appendChild(tbody);
-    tableWrap.appendChild(table);
+    pivotWrap.appendChild(table);
+    tableContainer.appendChild(pivotWrap);
   }
 
-  dsSelect.addEventListener('change', () => loadLeaderboard(dsSelect.value));
-
-  if (filtersData.datasets.length > 0) {
-    await loadLeaderboard(filtersData.datasets[0]);
-  } else {
-    tableWrap.appendChild(el('div', { class: 'loading' }, 'No datasets available.'));
-  }
+  renderPivot('');
+  sortSelect.addEventListener('change', () => renderPivot(sortSelect.value));
 }
 </script>
 </body>
