@@ -106,17 +106,30 @@ class IngestEvalResultPayload(BaseModel):
     ci_lower: float | None = None
     ci_upper: float | None = None
     stderr: float | None = None
+    # Phase 3: taxonomy fields
+    category: str | None = None
+    subcategory: str | None = None
+    param_count: int | None = None
 
 
 @app.post("/api/ingest/eval-result")
 async def ingest_eval_result(body: IngestEvalResultPayload, _=Depends(verify_ingest_token)):
-    # 1. Upsert model
+    # 1. Upsert model (now includes param_count)
     await db.upsert_model({
         "model_id": body.model_id,
         "display_name": body.display_name,
         "model_type": body.model_type,
         "owner": body.owner,
+        "param_count": body.param_count,
     })
+
+    # 1b. Upsert benchmark metadata if category provided
+    if body.category:
+        await db.upsert_benchmark_metadata({
+            "dataset_name": body.dataset_name,
+            "category": body.category,
+            "subcategory": body.subcategory,
+        })
 
     # 2. Upsert checkpoint (now includes training_run and recipe_tags)
     await db.upsert_checkpoint({
@@ -393,12 +406,8 @@ async def compare_models(
 # Heatmap (all models × all datasets matrix)
 # ---------------------------------------------------------------------------
 
-@app.get("/api/heatmap")
-async def get_heatmap():
-    """Return best primary score per (model, dataset) with provenance for the heatmap matrix.
-
-    Each cell is {score, status, eval_run_id} instead of a bare float.
-    """
+async def _build_heatmap(dataset_filter: list[str] | None = None) -> dict:
+    """Shared heatmap logic. If dataset_filter is provided, only include those datasets."""
     rows = await db.fetch(
         """
         WITH ranked AS (
@@ -424,6 +433,11 @@ async def get_heatmap():
         ORDER BY model_type DESC, model_id, dataset_name
         """
     )
+
+    # Apply dataset filter if provided
+    if dataset_filter is not None:
+        filter_set = set(dataset_filter)
+        rows = [r for r in rows if r["dataset_name"] in filter_set]
 
     datasets = sorted({r["dataset_name"] for r in rows})
     models = []
@@ -453,7 +467,88 @@ async def get_heatmap():
         missing = [ds for ds in datasets if ds not in matrix.get(mid, {}) or matrix[mid][ds].get("score") is None]
         coverage[mid] = {"evaluated": evaluated, "total": len(datasets), "missing": missing}
 
-    return {"models": models, "datasets": datasets, "matrix": matrix, "coverage": coverage}
+    # Category grouping from benchmark_metadata
+    cat_rows = await db.fetch("SELECT dataset_name, category FROM benchmark_metadata")
+    categories: dict[str, list[str]] = {}
+    for r in cat_rows:
+        cat = r["category"]
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append(r["dataset_name"])
+
+    return {"models": models, "datasets": datasets, "matrix": matrix, "coverage": coverage, "categories": categories}
+
+
+@app.get("/api/heatmap")
+async def get_heatmap(suite_id: str | None = Query(None)):
+    """Return best primary score per (model, dataset) with provenance for the heatmap matrix.
+
+    Each cell is {score, status, eval_run_id} instead of a bare float.
+    Optionally filter to a suite's datasets via ?suite_id=.
+    """
+    dataset_filter = None
+    if suite_id:
+        suite = await db.fetchrow("SELECT * FROM eval_suites WHERE suite_id = $1", suite_id)
+        if not suite:
+            return JSONResponse({"error": "Suite not found"}, status_code=404)
+        dataset_filter = list(suite["dataset_names"])
+    return await _build_heatmap(dataset_filter=dataset_filter)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Suites + Benchmark Metadata + Model Metadata admin endpoints
+# ---------------------------------------------------------------------------
+
+class SuitePayload(BaseModel):
+    suite_id: str
+    display_name: str
+    description: str | None = None
+    dataset_names: list[str]
+
+
+@app.post("/api/admin/suites")
+async def create_suite(body: SuitePayload, _=Depends(verify_ingest_token)):
+    await db.upsert_suite(body.model_dump())
+    return {"ok": True, "suite_id": body.suite_id}
+
+
+@app.get("/api/suites")
+async def list_suites():
+    rows = await db.fetch("SELECT * FROM eval_suites ORDER BY created_at")
+    return {"suites": [dict(r) for r in rows]}
+
+
+@app.get("/api/suites/{suite_id}/heatmap")
+async def get_suite_heatmap(suite_id: str):
+    suite = await db.fetchrow("SELECT * FROM eval_suites WHERE suite_id = $1", suite_id)
+    if not suite:
+        return JSONResponse({"error": "Suite not found"}, status_code=404)
+    return await _build_heatmap(dataset_filter=list(suite["dataset_names"]))
+
+
+class BenchmarkMetadataPayload(BaseModel):
+    benchmarks: list[dict]
+
+
+@app.post("/api/admin/benchmark-metadata")
+async def update_benchmark_metadata(body: BenchmarkMetadataPayload, _=Depends(verify_ingest_token)):
+    for bm in body.benchmarks:
+        await db.upsert_benchmark_metadata(bm)
+    return {"ok": True, "count": len(body.benchmarks)}
+
+
+class ModelMetadataPayload(BaseModel):
+    param_count: int | None = None
+    is_pinned: bool | None = None
+
+
+@app.patch("/api/models/{model_id}")
+async def patch_model(model_id: str, body: ModelMetadataPayload, _=Depends(verify_ingest_token)):
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not updates:
+        return JSONResponse({"error": "No fields to update"}, status_code=400)
+    await db.update_model_metadata(model_id, updates)
+    return {"ok": True, "model_id": model_id}
 
 
 # ---------------------------------------------------------------------------

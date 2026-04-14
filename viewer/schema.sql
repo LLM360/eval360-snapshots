@@ -108,3 +108,27 @@ WHERE eval_run_id IS NULL;
 ALTER TABLE eval_results ADD COLUMN IF NOT EXISTS ci_lower DOUBLE PRECISION;
 ALTER TABLE eval_results ADD COLUMN IF NOT EXISTS ci_upper DOUBLE PRECISION;
 ALTER TABLE eval_results ADD COLUMN IF NOT EXISTS stderr DOUBLE PRECISION;
+
+
+-- =========================================================================
+-- Phase 3: Benchmark taxonomy + suites
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS benchmark_metadata (
+    dataset_name    TEXT PRIMARY KEY,
+    category        TEXT NOT NULL DEFAULT 'uncategorized',
+    subcategory     TEXT,
+    primary_metric  TEXT,
+    description     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS eval_suites (
+    suite_id        TEXT PRIMARY KEY,
+    display_name    TEXT NOT NULL,
+    description     TEXT,
+    dataset_names   TEXT[] NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE models ADD COLUMN IF NOT EXISTS param_count BIGINT;
+ALTER TABLE models ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
