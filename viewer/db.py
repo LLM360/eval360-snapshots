@@ -75,31 +75,74 @@ async def upsert_model(model: dict) -> None:
 async def upsert_checkpoint(checkpoint: dict) -> None:
     await execute(
         """
-        INSERT INTO checkpoints (checkpoint_id, model_id, training_step, checkpoint_path, metadata)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO checkpoints (checkpoint_id, model_id, training_step, checkpoint_path, metadata,
+                                 training_run, recipe_tags)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (checkpoint_id) DO UPDATE SET
             training_step = COALESCE(EXCLUDED.training_step, checkpoints.training_step),
             checkpoint_path = COALESCE(EXCLUDED.checkpoint_path, checkpoints.checkpoint_path),
-            metadata = COALESCE(EXCLUDED.metadata, checkpoints.metadata)
+            metadata = COALESCE(EXCLUDED.metadata, checkpoints.metadata),
+            training_run = COALESCE(EXCLUDED.training_run, checkpoints.training_run),
+            recipe_tags = CASE WHEN EXCLUDED.recipe_tags = '{}' THEN checkpoints.recipe_tags
+                               ELSE EXCLUDED.recipe_tags END
         """,
         checkpoint["checkpoint_id"], checkpoint["model_id"],
         checkpoint.get("training_step"), checkpoint.get("checkpoint_path"),
         json.dumps(checkpoint.get("metadata", {})),
+        checkpoint.get("training_run"), checkpoint.get("recipe_tags", []),
     )
 
 
 async def upsert_eval_result(result: dict) -> None:
     await execute(
         """
-        INSERT INTO eval_results (checkpoint_id, dataset_name, metric_name, metric_value, is_primary, eval_config)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO eval_results (checkpoint_id, dataset_name, metric_name, metric_value,
+                                  is_primary, eval_config, eval_run_id, sample_count)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (checkpoint_id, dataset_name, metric_name) DO UPDATE SET
             metric_value = EXCLUDED.metric_value,
             is_primary = EXCLUDED.is_primary,
             eval_config = EXCLUDED.eval_config,
+            eval_run_id = COALESCE(EXCLUDED.eval_run_id, eval_results.eval_run_id),
+            sample_count = COALESCE(EXCLUDED.sample_count, eval_results.sample_count),
             ingested_at = NOW()
         """,
         result["checkpoint_id"], result["dataset_name"],
         result["metric_name"], result["metric_value"],
         result.get("is_primary", False), json.dumps(result.get("eval_config", {})),
+        result.get("eval_run_id"), result.get("sample_count"),
     )
+
+
+async def upsert_eval_run(run: dict) -> None:
+    await execute(
+        """
+        INSERT INTO eval_runs (eval_run_id, checkpoint_id, dataset_name, status,
+                               harness_commit, grader_type, grader_version, prompt_template,
+                               inference_config, dataset_version, dataset_split,
+                               sample_count, seed, error_message)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (eval_run_id) DO UPDATE SET
+            status = EXCLUDED.status,
+            harness_commit = COALESCE(EXCLUDED.harness_commit, eval_runs.harness_commit),
+            grader_type = COALESCE(EXCLUDED.grader_type, eval_runs.grader_type),
+            grader_version = COALESCE(EXCLUDED.grader_version, eval_runs.grader_version),
+            prompt_template = COALESCE(EXCLUDED.prompt_template, eval_runs.prompt_template),
+            inference_config = COALESCE(EXCLUDED.inference_config, eval_runs.inference_config),
+            dataset_version = COALESCE(EXCLUDED.dataset_version, eval_runs.dataset_version),
+            dataset_split = COALESCE(EXCLUDED.dataset_split, eval_runs.dataset_split),
+            sample_count = COALESCE(EXCLUDED.sample_count, eval_runs.sample_count),
+            seed = COALESCE(EXCLUDED.seed, eval_runs.seed),
+            error_message = COALESCE(EXCLUDED.error_message, eval_runs.error_message)
+        """,
+        run["eval_run_id"], run["checkpoint_id"], run["dataset_name"],
+        run.get("status", "completed"),
+        run.get("harness_commit"), run.get("grader_type"), run.get("grader_version"),
+        run.get("prompt_template"), json.dumps(run.get("inference_config", {})),
+        run.get("dataset_version"), run.get("dataset_split", "test"),
+        run.get("sample_count"), run.get("seed"), run.get("error_message"),
+    )
+
+
+async def get_eval_run(eval_run_id: str) -> asyncpg.Record | None:
+    return await fetchrow("SELECT * FROM eval_runs WHERE eval_run_id = $1", eval_run_id)

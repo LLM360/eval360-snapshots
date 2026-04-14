@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +86,21 @@ class IngestEvalResultPayload(BaseModel):
     primary_metric: str | None = None
     eval_config: dict = {}
     metadata: dict = {}
+    # Phase 1: provenance fields (all optional for backwards compatibility)
+    eval_run_id: str | None = None
+    harness_commit: str | None = None
+    grader_type: str | None = None
+    grader_version: str | None = None
+    prompt_template: str | None = None
+    inference_config: dict = {}
+    dataset_version: str | None = None
+    dataset_split: str = "test"
+    sample_count: int | None = None
+    seed: int | None = None
+    status: str = "completed"
+    error_message: str | None = None
+    training_run: str | None = None
+    recipe_tags: list[str] = []
 
 
 @app.post("/api/ingest/eval-result")
@@ -97,16 +113,37 @@ async def ingest_eval_result(body: IngestEvalResultPayload, _=Depends(verify_ing
         "owner": body.owner,
     })
 
-    # 2. Upsert checkpoint
+    # 2. Upsert checkpoint (now includes training_run and recipe_tags)
     await db.upsert_checkpoint({
         "checkpoint_id": body.checkpoint_id,
         "model_id": body.model_id,
         "training_step": body.training_step,
         "checkpoint_path": body.checkpoint_path,
         "metadata": body.metadata,
+        "training_run": body.training_run,
+        "recipe_tags": body.recipe_tags,
     })
 
-    # 3. Upsert eval results
+    # 3. Generate eval_run_id if not provided, then upsert eval_run
+    eval_run_id = body.eval_run_id or str(uuid.uuid4())[:12]
+    await db.upsert_eval_run({
+        "eval_run_id": eval_run_id,
+        "checkpoint_id": body.checkpoint_id,
+        "dataset_name": body.dataset_name,
+        "status": body.status,
+        "harness_commit": body.harness_commit,
+        "grader_type": body.grader_type,
+        "grader_version": body.grader_version,
+        "prompt_template": body.prompt_template,
+        "inference_config": body.inference_config,
+        "dataset_version": body.dataset_version,
+        "dataset_split": body.dataset_split,
+        "sample_count": body.sample_count,
+        "seed": body.seed,
+        "error_message": body.error_message,
+    })
+
+    # 4. Upsert eval results, linking each to the eval_run
     primary = body.primary_metric or next(iter(body.metrics), None)
     for metric_name, metric_value in body.metrics.items():
         await db.upsert_eval_result({
@@ -116,9 +153,11 @@ async def ingest_eval_result(body: IngestEvalResultPayload, _=Depends(verify_ing
             "metric_value": metric_value,
             "is_primary": metric_name == primary,
             "eval_config": body.eval_config,
+            "eval_run_id": eval_run_id,
+            "sample_count": body.sample_count,
         })
 
-    return {"ok": True, "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name}
+    return {"ok": True, "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name, "eval_run_id": eval_run_id}
 
 
 @app.delete("/api/models/{model_id}")
@@ -139,6 +178,19 @@ async def delete_checkpoint(checkpoint_id: str, _=Depends(verify_ingest_token)):
         return JSONResponse({"error": "Checkpoint not found"}, status_code=404)
     await db.execute("DELETE FROM checkpoints WHERE checkpoint_id = $1", checkpoint_id)
     return {"ok": True, "deleted": checkpoint_id}
+
+
+# ---------------------------------------------------------------------------
+# Query API: Eval Runs
+# ---------------------------------------------------------------------------
+
+@app.get("/api/eval-runs/{eval_run_id}")
+async def get_eval_run(eval_run_id: str):
+    """Return full provenance for a single eval run."""
+    row = await db.get_eval_run(eval_run_id)
+    if not row:
+        return JSONResponse({"error": "Eval run not found"}, status_code=404)
+    return {"eval_run": dict(row)}
 
 
 # ---------------------------------------------------------------------------
@@ -315,17 +367,33 @@ async def compare_models(
 
 @app.get("/api/heatmap")
 async def get_heatmap():
-    """Return best primary score per (model, dataset) for the heatmap matrix."""
+    """Return best primary score per (model, dataset) with provenance for the heatmap matrix.
+
+    Each cell is {score, status, eval_run_id} instead of a bare float.
+    """
     rows = await db.fetch(
         """
-        SELECT m.model_id, m.display_name, m.model_type, m.owner,
-               e.dataset_name, MAX(e.metric_value) AS best_score
-        FROM models m
-        JOIN checkpoints c ON c.model_id = m.model_id
-        JOIN eval_results e ON e.checkpoint_id = c.checkpoint_id
-        WHERE e.is_primary = TRUE
-        GROUP BY m.model_id, m.display_name, m.model_type, m.owner, e.dataset_name
-        ORDER BY m.model_type DESC, m.model_id, e.dataset_name
+        WITH ranked AS (
+            SELECT m.model_id, m.display_name, m.model_type, m.owner,
+                   e.dataset_name, e.metric_value,
+                   e.eval_run_id,
+                   COALESCE(er.status, 'completed') AS run_status,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY m.model_id, e.dataset_name
+                       ORDER BY e.metric_value DESC NULLS LAST
+                   ) AS rn
+            FROM models m
+            JOIN checkpoints c ON c.model_id = m.model_id
+            JOIN eval_results e ON e.checkpoint_id = c.checkpoint_id
+            LEFT JOIN eval_runs er ON er.eval_run_id = e.eval_run_id
+            WHERE e.is_primary = TRUE
+        )
+        SELECT model_id, display_name, model_type, owner,
+               dataset_name, metric_value AS best_score,
+               eval_run_id, run_status
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY model_type DESC, model_id, dataset_name
         """
     )
 
@@ -344,7 +412,11 @@ async def get_heatmap():
             })
         if mid not in matrix:
             matrix[mid] = {}
-        matrix[mid][r["dataset_name"]] = round(r["best_score"], 4)
+        matrix[mid][r["dataset_name"]] = {
+            "score": round(r["best_score"], 4) if r["best_score"] is not None else None,
+            "status": r["run_status"],
+            "eval_run_id": r["eval_run_id"],
+        }
 
     return {"models": models, "datasets": datasets, "matrix": matrix}
 
@@ -445,12 +517,42 @@ async def get_model_diagnosis(model_id: str):
             "trend": compute_trend(recent_by_ds.get(ds, [])),
         }
 
+    # Best overall checkpoint: highest average primary metric across all datasets
+    best_overall_row = await db.fetchrow(
+        """
+        SELECT c.training_step
+        FROM checkpoints c
+        JOIN eval_results e ON e.checkpoint_id = c.checkpoint_id
+        WHERE c.model_id = $1 AND e.is_primary = TRUE
+        GROUP BY c.checkpoint_id, c.training_step
+        ORDER BY AVG(e.metric_value) DESC
+        LIMIT 1
+        """,
+        model_id,
+    )
+    best_overall_step = best_overall_row["training_step"] if best_overall_row else None
+
+    # Best checkpoint per dataset: highest primary metric per dataset
+    best_per_ds_rows = await db.fetch(
+        """
+        SELECT DISTINCT ON (e.dataset_name) e.dataset_name, c.training_step
+        FROM eval_results e
+        JOIN checkpoints c ON c.checkpoint_id = e.checkpoint_id
+        WHERE c.model_id = $1 AND e.is_primary = TRUE
+        ORDER BY e.dataset_name, e.metric_value DESC
+        """,
+        model_id,
+    )
+    best_per_dataset = {r["dataset_name"]: r["training_step"] for r in best_per_ds_rows}
+
     return {
         "model_id": model_id,
         "display_name": dict(model)["display_name"],
         "model_type": dict(model)["model_type"],
         "latest_checkpoint": latest_cp["checkpoint_id"],
         "latest_step": latest_cp["training_step"],
+        "best_overall_step": best_overall_step,
+        "best_per_dataset": best_per_dataset,
         "scores": scores,
     }
 
