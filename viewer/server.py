@@ -190,6 +190,81 @@ async def ingest_eval_result(body: IngestEvalResultPayload, _=Depends(verify_ing
             "stderr": se,
         })
 
+    # Phase 5: Regression detection — compare against previous checkpoint
+    try:
+        primary_metric_name = primary
+        primary_value = body.metrics.get(primary) if primary else None
+        if primary_value is not None and body.model_type == "training" and body.training_step is not None:
+            prev_row = await db.fetchrow(
+                """
+                SELECT e.metric_value, e.ci_lower, e.ci_upper
+                FROM eval_results e
+                JOIN checkpoints c ON c.checkpoint_id = e.checkpoint_id
+                WHERE c.model_id = $1 AND e.dataset_name = $2 AND e.is_primary = TRUE
+                  AND c.training_step < $3
+                ORDER BY c.training_step DESC LIMIT 1
+                """,
+                body.model_id, body.dataset_name, body.training_step,
+            )
+            if prev_row:
+                prev_val = prev_row["metric_value"]
+                delta = round(primary_value - prev_val, 4)
+                sig = _compute_significance(
+                    primary_value, ci_lo, ci_hi,
+                    prev_val, prev_row["ci_lower"], prev_row["ci_upper"],
+                )
+                detail = {"prev_score": prev_val, "new_score": primary_value, "delta": delta, "significance": sig}
+                if delta < 0 and sig == "likely_real":
+                    await db.insert_alert({
+                        "alert_type": "regression", "model_id": body.model_id,
+                        "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name,
+                        "severity": "critical",
+                        "message": f"{body.display_name} regressed on {body.dataset_name}: {prev_val:.4f} → {primary_value:.4f} ({delta:+.4f})",
+                        "detail": detail,
+                    })
+                elif delta < 0 and sig == "uncertain":
+                    await db.insert_alert({
+                        "alert_type": "regression", "model_id": body.model_id,
+                        "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name,
+                        "severity": "warning",
+                        "message": f"{body.display_name} may have regressed on {body.dataset_name}: {prev_val:.4f} → {primary_value:.4f} ({delta:+.4f})",
+                        "detail": detail,
+                    })
+                elif delta > 0 and sig == "likely_real":
+                    await db.insert_alert({
+                        "alert_type": "improvement", "model_id": body.model_id,
+                        "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name,
+                        "severity": "info",
+                        "message": f"{body.display_name} improved on {body.dataset_name}: {prev_val:.4f} → {primary_value:.4f} ({delta:+.4f})",
+                        "detail": detail,
+                    })
+                event_type = "regression" if delta < 0 and sig in ("likely_real", "uncertain") else "improvement" if delta > 0 and sig == "likely_real" else "eval_completed"
+                await db.insert_activity({
+                    "event_type": event_type, "model_id": body.model_id,
+                    "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name,
+                    "summary": f"{body.display_name} / {body.dataset_name}: {primary_value:.4f} (Δ{delta:+.4f})",
+                    "detail": detail,
+                })
+            else:
+                await db.insert_activity({
+                    "event_type": "eval_completed", "model_id": body.model_id,
+                    "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name,
+                    "summary": f"{body.display_name} / {body.dataset_name}: {primary_value:.4f} (first eval)",
+                    "detail": {"new_score": primary_value},
+                })
+        elif primary_value is not None:
+            await db.insert_activity({
+                "event_type": "eval_completed", "model_id": body.model_id,
+                "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name,
+                "summary": f"{body.display_name} / {body.dataset_name}: {primary_value:.4f}",
+                "detail": {"new_score": primary_value},
+            })
+        # Fire webhooks
+        if primary_value is not None and body.model_type == "training":
+            await _fire_webhooks_if_needed(body.model_id, body.checkpoint_id, body.dataset_name)
+    except Exception as e:
+        logger.warning("Phase 5 regression detection failed (non-fatal): %s", e)
+
     return {"ok": True, "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name, "eval_run_id": eval_run_id}
 
 
@@ -552,6 +627,55 @@ async def patch_model(model_id: str, body: ModelMetadataPayload, _=Depends(verif
 
 
 # ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _compute_significance(m_val, m_ci_lo, m_ci_hi, b_val, b_ci_lo, b_ci_hi):
+    """CI overlap test. Returns: likely_real, likely_noise, uncertain, or insufficient_data."""
+    if m_ci_lo is None or b_ci_lo is None:
+        return "insufficient_data"
+    if m_ci_lo > b_ci_hi or b_ci_lo > m_ci_hi:
+        return "likely_real"
+    overlap = min(m_ci_hi, b_ci_hi) - max(m_ci_lo, b_ci_lo)
+    m_width = m_ci_hi - m_ci_lo
+    b_width = b_ci_hi - b_ci_lo
+    smaller_width = min(m_width, b_width) if min(m_width, b_width) > 0 else 1
+    if overlap / smaller_width > 0.5:
+        return "likely_noise"
+    return "uncertain"
+
+
+async def _fire_webhooks_if_needed(model_id: str, checkpoint_id: str, dataset_name: str):
+    """Best-effort webhook dispatch for recent alerts."""
+    try:
+        import httpx
+        recent_alerts = await db.fetch(
+            """SELECT alert_type, message, detail FROM alerts
+               WHERE checkpoint_id = $1 AND dataset_name = $2
+               AND created_at > NOW() - INTERVAL '5 seconds'""",
+            checkpoint_id, dataset_name,
+        )
+        for alert in recent_alerts:
+            hooks = await db.get_active_webhooks(alert["alert_type"])
+            for hook in hooks:
+                try:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        await client.post(hook["url"], json={
+                            "alert_type": alert["alert_type"],
+                            "model_id": model_id,
+                            "checkpoint_id": checkpoint_id,
+                            "dataset_name": dataset_name,
+                            "message": alert["message"],
+                            "detail": json.loads(alert["detail"]) if isinstance(alert["detail"], str) else alert["detail"],
+                        })
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Model diagnosis (gap analysis + trends)
 # ---------------------------------------------------------------------------
 
@@ -622,21 +746,6 @@ async def get_model_diagnosis(model_id: str):
         if len(recent_by_ds[ds]) < 5:
             recent_by_ds[ds].append(r["metric_value"])
 
-    def compute_significance(m_val, m_ci_lo, m_ci_hi, b_val, b_ci_lo, b_ci_hi):
-        if m_ci_lo is None or b_ci_lo is None:
-            return "insufficient_data"
-        # Check for no overlap
-        if m_ci_lo > b_ci_hi or b_ci_lo > m_ci_hi:
-            return "likely_real"
-        # Compute overlap fraction
-        overlap = min(m_ci_hi, b_ci_hi) - max(m_ci_lo, b_ci_lo)
-        m_width = m_ci_hi - m_ci_lo
-        b_width = b_ci_hi - b_ci_lo
-        smaller_width = min(m_width, b_width) if min(m_width, b_width) > 0 else 1
-        if overlap / smaller_width > 0.5:
-            return "likely_noise"
-        return "uncertain"
-
     def compute_trend(values: list) -> str:
         if len(values) < 2:
             return "new"
@@ -662,7 +771,7 @@ async def get_model_diagnosis(model_id: str):
         val = s["metric_value"]
         bl_score = bl.get("score")
         gap = round(val - bl_score, 4) if bl_score is not None else None
-        significance = compute_significance(
+        significance = _compute_significance(
             val, s["ci_lower"], s["ci_upper"],
             bl_score, bl.get("ci_lower"), bl.get("ci_upper"),
         ) if bl_score is not None else "insufficient_data"
@@ -849,6 +958,193 @@ async def get_slices(eval_run_id: str):
         "by_difficulty": by_difficulty,
         "error_concentration": error_concentration,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Alerts, Activity, Diff, Promotion, Webhooks
+# ---------------------------------------------------------------------------
+
+@app.get("/api/alerts")
+async def list_alerts(
+    model_id: str | None = Query(None),
+    alert_type: str | None = Query(None),
+    severity: str | None = Query(None),
+    acknowledged: bool | None = Query(None),
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+):
+    alerts = await db.query_alerts(
+        model_id=model_id, alert_type=alert_type,
+        severity=severity, acknowledged=acknowledged,
+        limit=limit, offset=offset,
+    )
+    return {"alerts": alerts}
+
+
+@app.post("/api/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(alert_id: int, _=Depends(verify_ingest_token)):
+    ok = await db.acknowledge_alert(alert_id)
+    if not ok:
+        return JSONResponse({"error": "Alert not found"}, status_code=404)
+    return {"ok": True, "alert_id": alert_id}
+
+
+@app.get("/api/activity")
+async def get_activity(
+    model_id: str | None = Query(None),
+    limit: int = Query(50, le=200),
+    offset: int = Query(0, ge=0),
+):
+    events = await db.query_activity(model_id=model_id, limit=limit, offset=offset)
+    return {"events": events}
+
+
+@app.get("/api/diff")
+async def diff_checkpoints(
+    checkpoint_a: str = Query(...),
+    checkpoint_b: str = Query(...),
+):
+    """Compare two checkpoints across all shared datasets."""
+    rows_a = await db.fetch(
+        "SELECT dataset_name, metric_name, metric_value, ci_lower, ci_upper FROM eval_results WHERE checkpoint_id = $1 AND is_primary = TRUE",
+        checkpoint_a,
+    )
+    rows_b = await db.fetch(
+        "SELECT dataset_name, metric_name, metric_value, ci_lower, ci_upper FROM eval_results WHERE checkpoint_id = $1 AND is_primary = TRUE",
+        checkpoint_b,
+    )
+    map_a = {r["dataset_name"]: r for r in rows_a}
+    map_b = {r["dataset_name"]: r for r in rows_b}
+    all_datasets = sorted(set(map_a.keys()) | set(map_b.keys()))
+
+    diffs = []
+    for ds in all_datasets:
+        a = map_a.get(ds)
+        b = map_b.get(ds)
+        score_a = round(a["metric_value"], 4) if a else None
+        score_b = round(b["metric_value"], 4) if b else None
+        delta = round(score_a - score_b, 4) if score_a is not None and score_b is not None else None
+        sig = _compute_significance(
+            score_a, a["ci_lower"] if a else None, a["ci_upper"] if a else None,
+            score_b, b["ci_lower"] if b else None, b["ci_upper"] if b else None,
+        ) if score_a is not None and score_b is not None else "insufficient_data"
+        diffs.append({
+            "dataset_name": ds,
+            "score_a": score_a, "score_b": score_b,
+            "delta": delta, "significance": sig,
+        })
+
+    cp_a = await db.fetchrow("SELECT checkpoint_id, model_id, training_step FROM checkpoints WHERE checkpoint_id = $1", checkpoint_a)
+    cp_b = await db.fetchrow("SELECT checkpoint_id, model_id, training_step FROM checkpoints WHERE checkpoint_id = $1", checkpoint_b)
+
+    return {
+        "checkpoint_a": dict(cp_a) if cp_a else {"checkpoint_id": checkpoint_a},
+        "checkpoint_b": dict(cp_b) if cp_b else {"checkpoint_id": checkpoint_b},
+        "datasets": diffs,
+        "summary": {
+            "total": len(diffs),
+            "improved": sum(1 for d in diffs if d["delta"] and d["delta"] > 0),
+            "regressed": sum(1 for d in diffs if d["delta"] and d["delta"] < 0),
+            "unchanged": sum(1 for d in diffs if d["delta"] is not None and d["delta"] == 0),
+            "missing": sum(1 for d in diffs if d["delta"] is None),
+        },
+    }
+
+
+@app.get("/api/models/{model_id}/promotion-status")
+async def get_promotion_status(model_id: str):
+    """Check if the latest checkpoint passes all applicable promotion rules."""
+    latest_cp = await db.fetchrow(
+        "SELECT checkpoint_id, training_step FROM checkpoints WHERE model_id = $1 ORDER BY training_step DESC NULLS LAST LIMIT 1",
+        model_id,
+    )
+    if not latest_cp:
+        return {"model_id": model_id, "overall": "no_data", "rules": []}
+
+    rules = await db.get_promotion_rules(model_id)
+    if not rules:
+        return {"model_id": model_id, "checkpoint_id": latest_cp["checkpoint_id"], "overall": "no_rules", "rules": []}
+
+    scores = await db.fetch(
+        "SELECT dataset_name, metric_value FROM eval_results WHERE checkpoint_id = $1 AND is_primary = TRUE",
+        latest_cp["checkpoint_id"],
+    )
+    score_map = {r["dataset_name"]: r["metric_value"] for r in scores}
+
+    critical_regressions = await db.fetch(
+        "SELECT dataset_name FROM alerts WHERE checkpoint_id = $1 AND alert_type = 'regression' AND severity = 'critical' AND acknowledged = FALSE",
+        latest_cp["checkpoint_id"],
+    )
+    regression_datasets = {r["dataset_name"] for r in critical_regressions}
+
+    rule_results = []
+    for rule in rules:
+        failures = []
+        min_scores = rule.get("min_scores") or {}
+        if isinstance(min_scores, str):
+            min_scores = json.loads(min_scores)
+        for ds, min_val in min_scores.items():
+            actual = score_map.get(ds)
+            if actual is None:
+                failures.append(f"{ds}: no score (need ≥{min_val})")
+            elif actual < min_val:
+                failures.append(f"{ds}: {actual:.4f} < {min_val}")
+        if rule.get("no_regressions", True) and regression_datasets:
+            failures.append(f"Critical regressions on: {', '.join(sorted(regression_datasets))}")
+        if rule.get("suite_id"):
+            suite = await db.fetchrow("SELECT dataset_names FROM eval_suites WHERE suite_id = $1", rule["suite_id"])
+            if suite:
+                for ds in suite["dataset_names"]:
+                    if ds not in score_map:
+                        failures.append(f"Missing eval: {ds}")
+        rule_results.append({
+            "rule_name": rule["rule_name"],
+            "passed": len(failures) == 0,
+            "failures": failures,
+            "description": rule.get("description"),
+        })
+
+    overall = "ready" if all(r["passed"] for r in rule_results) else "blocked"
+    return {
+        "model_id": model_id,
+        "checkpoint_id": latest_cp["checkpoint_id"],
+        "training_step": latest_cp["training_step"],
+        "overall": overall,
+        "rules": rule_results,
+    }
+
+
+class PromotionRulePayload(BaseModel):
+    rule_name: str
+    model_id: str | None = None
+    suite_id: str | None = None
+    min_scores: dict = {}
+    no_regressions: bool = True
+    description: str | None = None
+
+
+@app.post("/api/admin/promotion-rules")
+async def create_promotion_rule(body: PromotionRulePayload, _=Depends(verify_ingest_token)):
+    await db.upsert_promotion_rule(body.model_dump())
+    return {"ok": True, "rule_name": body.rule_name}
+
+
+@app.get("/api/admin/promotion-rules")
+async def list_promotion_rules(model_id: str | None = Query(None)):
+    rules = await db.get_promotion_rules(model_id)
+    return {"rules": rules}
+
+
+class WebhookPayload(BaseModel):
+    url: str
+    events: list[str]
+    active: bool = True
+
+
+@app.post("/api/admin/webhooks")
+async def create_webhook(body: WebhookPayload, _=Depends(verify_ingest_token)):
+    wh_id = await db.upsert_webhook(body.model_dump())
+    return {"ok": True, "id": wh_id}
 
 
 # ---------------------------------------------------------------------------

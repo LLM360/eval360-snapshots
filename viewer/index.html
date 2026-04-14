@@ -715,6 +715,62 @@ select option { background: var(--surface); }
 
 .close-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: var(--radius); padding: 4px 12px; font-size: 12px; cursor: pointer; }
 .close-btn:hover { color: var(--text); border-color: var(--border-2); }
+
+/* ===================================================================
+   PHASE 5: ACTIVITY FEED, ALERTS, PROMOTION, DIFF
+   =================================================================== */
+.activity-feed { display: flex; flex-direction: column; gap: 8px; }
+.activity-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 16px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); transition: border-color 0.15s;
+}
+.activity-item:hover { border-color: var(--border-2); }
+.activity-icon {
+  width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; font-size: 14px; flex-shrink: 0; margin-top: 2px;
+}
+.activity-icon.regression { background: var(--red-dim); color: var(--red); }
+.activity-icon.improvement { background: var(--green-dim); color: var(--green); }
+.activity-icon.eval_completed { background: var(--accent-dim); color: var(--accent); }
+.activity-body { flex: 1; min-width: 0; }
+.activity-summary { font-size: 13px; color: var(--text); }
+.activity-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.alert-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  font-size: 10px; font-weight: 700; color: #fff;
+}
+.alert-badge.critical { background: var(--red); }
+.alert-badge.warning { background: var(--amber); color: #000; }
+
+.promotion-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px;
+  border-radius: var(--radius); font-size: 11px; font-weight: 600;
+}
+.promotion-badge.ready { background: var(--green-dim); color: var(--green); }
+.promotion-badge.blocked { background: var(--red-dim); color: var(--red); }
+.promotion-badge.no_rules { background: rgba(255,255,255,0.05); color: var(--muted); }
+.promotion-badge.no_data { background: rgba(255,255,255,0.05); color: var(--muted); }
+
+.diff-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+.diff-table th, .diff-table td {
+  padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.diff-table th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; }
+.diff-positive { color: var(--green); }
+.diff-negative { color: var(--red); }
+.diff-neutral { color: var(--muted); }
+
+.filter-bar-activity {
+  display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;
+}
+.filter-bar-activity select, .filter-bar-activity input {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius); padding: 6px 10px; font-size: 12px; font-family: var(--font-body);
+}
 </style>
 </head>
 <body>
@@ -725,6 +781,7 @@ select option { background: var(--surface); }
     <a class="nav-tab" href="#observatory" data-tab="observatory">Observatory</a>
     <a class="nav-tab" href="#models" data-tab="models">Models</a>
     <a class="nav-tab" href="#leaderboard" data-tab="leaderboard">Leaderboard</a>
+    <a class="nav-tab" href="#activity" data-tab="activity">Activity</a>
   </div>
 </nav>
 
@@ -1275,6 +1332,13 @@ async function route() {
     } else if (hash === '#leaderboard') {
       setTab('leaderboard');
       await viewLeaderboard(app);
+    } else if (hash === '#activity') {
+      setTab('activity');
+      await viewActivity(app);
+    } else if (hash.startsWith('#diff/')) {
+      const parts = hash.slice(6).split('/');
+      setTab('activity');
+      await viewDiff(app, decodeURIComponent(parts[0]), decodeURIComponent(parts[1]));
     } else {
       setTab('observatory');
       await viewObservatory(app);
@@ -1497,6 +1561,16 @@ async function viewModels(app) {
     }
     card.appendChild(header);
 
+    // Phase 5: Alert badge (loaded async)
+    const alertBadgeSpan = el('span');
+    header.appendChild(alertBadgeSpan);
+    api('/api/alerts?model_id=' + encodeURIComponent(m.model_id) + '&acknowledged=false&severity=critical&limit=1').then(d => {
+      const cnt = (d.alerts || []).length;
+      if (cnt > 0) {
+        alertBadgeSpan.innerHTML = '<span class="alert-badge critical" style="margin-left:6px;" title="Unacknowledged critical regressions">!</span>';
+      }
+    }).catch(() => {});
+
     card.appendChild(el('div', {class:'card-meta'},
       'Owner: ' + m.owner + ' \u00b7 ' + m.checkpoint_count + ' checkpoints \u00b7 ' + m.dataset_count + ' datasets'));
 
@@ -1630,6 +1704,35 @@ async function viewModelDetail(app, modelId) {
     }
   }
   if (ckptStrip.children.length > 0) wrap.appendChild(ckptStrip);
+
+  // Phase 5: Promotion status + checkpoint diff
+  const promotionWrap = el('div', {style:'display:flex; gap:12px; margin-bottom:16px; align-items:flex-start; flex-wrap:wrap;'});
+  const promotionBox = el('div', {style:'flex:1; min-width:200px;'});
+  renderPromotionBadge(promotionBox, modelId);
+  promotionWrap.appendChild(promotionBox);
+  // Diff picker: compare two checkpoints
+  if (modelData.checkpoints.length >= 2) {
+    const diffBox = el('div', {style:'display:flex; gap:6px; align-items:center; font-size:12px;'});
+    diffBox.appendChild(el('span', {style:'color:var(--muted);'}, 'Diff:'));
+    const selA = el('select', {style:'background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 8px;font-size:11px;font-family:var(--font-body);'});
+    const selB = el('select', {style:'background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:4px 8px;font-size:11px;font-family:var(--font-body);'});
+    for (const cp of modelData.checkpoints) {
+      const label = cp.training_step != null ? 'Step ' + cp.training_step : cp.checkpoint_id;
+      selA.appendChild(el('option', {value: cp.checkpoint_id}, label));
+      selB.appendChild(el('option', {value: cp.checkpoint_id}, label));
+    }
+    if (modelData.checkpoints.length >= 2) selB.selectedIndex = modelData.checkpoints.length - 1;
+    const diffBtn = el('button', {class:'btn', style:'font-size:11px;padding:4px 10px;'}, 'Compare');
+    diffBtn.addEventListener('click', () => {
+      location.hash = '#diff/' + encodeURIComponent(selA.value) + '/' + encodeURIComponent(selB.value);
+    });
+    diffBox.appendChild(selA);
+    diffBox.appendChild(el('span', {style:'color:var(--muted);'}, 'vs'));
+    diffBox.appendChild(selB);
+    diffBox.appendChild(diffBtn);
+    promotionWrap.appendChild(diffBox);
+  }
+  wrap.appendChild(promotionWrap);
 
   // Diagnostic panels: delta bar chart + gap analysis
   const diagGrid = el('div', {class:'diag-grid'});
@@ -2383,6 +2486,167 @@ async function viewLeaderboard(app) {
     renderPivot(currentData, '');
   });
 }
+
+/* ===================================================================
+   VIEW: ACTIVITY FEED
+   =================================================================== */
+async function viewActivity(app) {
+  clearNode(app);
+  const wrap = el('div', {class:'page-enter'});
+  app.appendChild(wrap);
+
+  wrap.appendChild(el('h2', {class:'section-title'}, 'Activity Feed'));
+
+  // Filter bar
+  const filterBar = el('div', {class:'filter-bar-activity'});
+  const typeSelect = el('select');
+  typeSelect.innerHTML = '<option value="">All events</option><option value="regression">Regressions</option><option value="improvement">Improvements</option><option value="eval_completed">Eval completed</option>';
+  filterBar.appendChild(typeSelect);
+
+  const sevSelect = el('select');
+  sevSelect.innerHTML = '<option value="">All severity</option><option value="critical">Critical</option><option value="warning">Warning</option><option value="info">Info</option>';
+  filterBar.appendChild(sevSelect);
+  wrap.appendChild(filterBar);
+
+  // Alerts summary
+  const alertSummary = el('div', {style:'margin-bottom: 16px;'});
+  wrap.appendChild(alertSummary);
+
+  // Activity list
+  const feed = el('div', {class:'activity-feed'});
+  wrap.appendChild(feed);
+
+  async function loadActivity() {
+    // Load alerts summary
+    try {
+      const alertData = await api('/api/alerts?acknowledged=false&limit=200');
+      const alerts = alertData.alerts || [];
+      const critCount = alerts.filter(a => a.severity === 'critical').length;
+      const warnCount = alerts.filter(a => a.severity === 'warning').length;
+      if (critCount || warnCount) {
+        alertSummary.innerHTML = '';
+        const box = el('div', {style:'padding: 12px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; display: flex; gap: 12px; align-items: center;'});
+        box.innerHTML = '<span style="font-size:13px; color: var(--text);">Unacknowledged alerts:</span>';
+        if (critCount) box.innerHTML += '<span class="alert-badge critical">' + critCount + ' critical</span>';
+        if (warnCount) box.innerHTML += '<span class="alert-badge warning">' + warnCount + ' warning</span>';
+        alertSummary.appendChild(box);
+      }
+    } catch(e) {}
+
+    // Load events
+    const events = await api('/api/activity?limit=100');
+    clearNode(feed);
+    const items = events.events || [];
+    if (!items.length) {
+      feed.appendChild(el('div', {class:'empty-state'}, 'No activity yet.'));
+      return;
+    }
+    for (const evt of items) {
+      if (typeSelect.value && evt.event_type !== typeSelect.value) continue;
+      const iconClass = evt.event_type === 'regression' ? 'regression' : evt.event_type === 'improvement' ? 'improvement' : 'eval_completed';
+      const iconChar = evt.event_type === 'regression' ? '\u2193' : evt.event_type === 'improvement' ? '\u2191' : '\u2022';
+      const item = el('div', {class:'activity-item'});
+      const icon = el('div', {class:'activity-icon ' + iconClass});
+      icon.textContent = iconChar;
+      item.appendChild(icon);
+      const body = el('div', {class:'activity-body'});
+      const summaryEl = el('div', {class:'activity-summary'});
+      summaryEl.textContent = evt.summary || '';
+      body.appendChild(summaryEl);
+      const meta = el('div', {class:'activity-meta'});
+      const modelLink = evt.model_id ? '<a href="#model/' + encodeURIComponent(evt.model_id) + '">' + evt.model_id + '</a>' : '';
+      meta.innerHTML = [modelLink, evt.dataset_name, evt.event_type].filter(Boolean).join(' \u00B7 ');
+      body.appendChild(meta);
+      item.appendChild(body);
+      // Delta badge
+      if (evt.detail && evt.detail.delta != null) {
+        const delta = evt.detail.delta;
+        const cls = delta > 0 ? 'diff-positive' : delta < 0 ? 'diff-negative' : 'diff-neutral';
+        const badge = el('span', {class: cls, style:'font-family: var(--font-mono); font-size: 12px; white-space: nowrap;'});
+        badge.textContent = (delta > 0 ? '+' : '') + delta.toFixed(4);
+        item.appendChild(badge);
+      }
+      feed.appendChild(item);
+    }
+  }
+
+  typeSelect.addEventListener('change', loadActivity);
+  sevSelect.addEventListener('change', loadActivity);
+  await loadActivity();
+}
+
+/* ===================================================================
+   VIEW: CHECKPOINT DIFF
+   =================================================================== */
+async function viewDiff(app, cpA, cpB) {
+  clearNode(app);
+  const wrap = el('div', {class:'page-enter'});
+  app.appendChild(wrap);
+
+  const data = await api('/api/diff?checkpoint_a=' + encodeURIComponent(cpA) + '&checkpoint_b=' + encodeURIComponent(cpB));
+
+  const stepA = data.checkpoint_a.training_step;
+  const stepB = data.checkpoint_b.training_step;
+  wrap.appendChild(el('h2', {class:'section-title'}, 'Checkpoint Diff'));
+  const subtitle = el('div', {class:'model-subtitle', style:'margin-bottom:16px;'});
+  subtitle.textContent = (stepA != null ? 'Step ' + stepA : cpA) + '  vs  ' + (stepB != null ? 'Step ' + stepB : cpB);
+  wrap.appendChild(subtitle);
+
+  // Summary chips
+  const s = data.summary || {};
+  const chips = el('div', {style:'display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;'});
+  chips.innerHTML =
+    '<span class="metric-chip" style="border-color:var(--green);">' + (s.improved||0) + ' improved</span>' +
+    '<span class="metric-chip" style="border-color:var(--red);">' + (s.regressed||0) + ' regressed</span>' +
+    '<span class="metric-chip" style="border-color:var(--muted);">' + (s.unchanged||0) + ' unchanged</span>';
+  wrap.appendChild(chips);
+
+  // Table
+  const table = document.createElement('table');
+  table.className = 'diff-table';
+  let thead = '<thead><tr><th>Dataset</th><th>Score A (Step ' + (stepA||'?') + ')</th><th>Score B (Step ' + (stepB||'?') + ')</th><th>Delta</th><th>Significance</th></tr></thead>';
+  let tbody = '<tbody>';
+  for (const d of (data.datasets || [])) {
+    const cls = d.delta > 0 ? 'diff-positive' : d.delta < 0 ? 'diff-negative' : 'diff-neutral';
+    const deltaStr = d.delta != null ? (d.delta > 0 ? '+' : '') + d.delta.toFixed(4) : '\u2014';
+    const sigLabel = d.significance === 'likely_real' ? '\u25CF real' : d.significance === 'likely_noise' ? '~ noise' : d.significance === 'uncertain' ? '? uncertain' : '\u2014';
+    tbody += '<tr><td>' + d.dataset_name + '</td><td>' + (d.score_a != null ? d.score_a.toFixed(4) : '\u2014') + '</td><td>' + (d.score_b != null ? d.score_b.toFixed(4) : '\u2014') + '</td><td class="' + cls + '">' + deltaStr + '</td><td>' + sigLabel + '</td></tr>';
+  }
+  tbody += '</tbody>';
+  table.innerHTML = thead + tbody;
+  wrap.appendChild(table);
+}
+
+/* ===================================================================
+   PROMOTION STATUS HELPER
+   =================================================================== */
+async function renderPromotionBadge(container, modelId) {
+  try {
+    const data = await api('/api/models/' + encodeURIComponent(modelId) + '/promotion-status');
+    const badge = el('span', {class: 'promotion-badge ' + data.overall});
+    if (data.overall === 'ready') badge.textContent = '\u2713 Promotion Ready';
+    else if (data.overall === 'blocked') badge.textContent = '\u2717 Blocked';
+    else if (data.overall === 'no_rules') badge.textContent = 'No promotion rules';
+    else badge.textContent = 'No data';
+    container.appendChild(badge);
+    // Show rule details on hover
+    if (data.rules && data.rules.length) {
+      const details = el('div', {style:'margin-top: 8px; font-size: 12px; color: var(--muted);'});
+      for (const r of data.rules) {
+        const line = el('div', {style:'margin-bottom: 4px;'});
+        const icon = r.passed ? '\u2713' : '\u2717';
+        const color = r.passed ? 'var(--green)' : 'var(--red)';
+        line.innerHTML = '<span style="color:' + color + ';">' + icon + '</span> ' + r.rule_name;
+        if (r.failures && r.failures.length) {
+          line.innerHTML += '<div style="margin-left:16px; color:var(--red); font-size:11px;">' + r.failures.join('<br>') + '</div>';
+        }
+        details.appendChild(line);
+      }
+      container.appendChild(details);
+    }
+  } catch(e) {}
+}
+
 </script>
 </body>
 </html>

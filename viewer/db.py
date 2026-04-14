@@ -242,3 +242,149 @@ async def bulk_insert_examples(eval_run_id: str, examples: list[dict]) -> int:
         rows,
     )
     return len(rows)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Alerts, activity, promotion, webhooks
+# ---------------------------------------------------------------------------
+
+async def insert_alert(alert: dict) -> int:
+    """Insert an alert and return its ID."""
+    return await fetchval(
+        """
+        INSERT INTO alerts (alert_type, model_id, checkpoint_id, dataset_name,
+                           severity, message, detail)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+        """,
+        alert["alert_type"], alert["model_id"], alert["checkpoint_id"],
+        alert.get("dataset_name"), alert.get("severity", "info"),
+        alert["message"], json.dumps(alert.get("detail", {})),
+    )
+
+
+async def query_alerts(
+    model_id: str | None = None,
+    alert_type: str | None = None,
+    severity: str | None = None,
+    acknowledged: bool | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list:
+    conditions = []
+    params: list = []
+    idx = 1
+    if model_id:
+        conditions.append(f"model_id = ${idx}")
+        params.append(model_id)
+        idx += 1
+    if alert_type:
+        conditions.append(f"alert_type = ${idx}")
+        params.append(alert_type)
+        idx += 1
+    if severity:
+        conditions.append(f"severity = ${idx}")
+        params.append(severity)
+        idx += 1
+    if acknowledged is not None:
+        conditions.append(f"acknowledged = ${idx}")
+        params.append(acknowledged)
+        idx += 1
+    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    params.extend([limit, offset])
+    rows = await fetch(
+        f"""
+        SELECT * FROM alerts {where}
+        ORDER BY created_at DESC
+        LIMIT ${idx} OFFSET ${idx + 1}
+        """,
+        *params,
+    )
+    return [dict(r) for r in rows]
+
+
+async def acknowledge_alert(alert_id: int) -> bool:
+    result = await execute(
+        "UPDATE alerts SET acknowledged = TRUE WHERE id = $1", alert_id
+    )
+    return "UPDATE 1" in result
+
+
+async def insert_activity(event: dict) -> int:
+    return await fetchval(
+        """
+        INSERT INTO activity_log (event_type, model_id, checkpoint_id, dataset_name, summary, detail)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+        """,
+        event["event_type"], event.get("model_id"), event.get("checkpoint_id"),
+        event.get("dataset_name"), event["summary"],
+        json.dumps(event.get("detail", {})),
+    )
+
+
+async def query_activity(
+    model_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list:
+    if model_id:
+        rows = await fetch(
+            "SELECT * FROM activity_log WHERE model_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+            model_id, limit, offset,
+        )
+    else:
+        rows = await fetch(
+            "SELECT * FROM activity_log ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+            limit, offset,
+        )
+    return [dict(r) for r in rows]
+
+
+async def upsert_promotion_rule(rule: dict) -> None:
+    await execute(
+        """
+        INSERT INTO promotion_rules (rule_name, model_id, suite_id, min_scores, no_regressions, description)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (rule_name) DO UPDATE SET
+            model_id = EXCLUDED.model_id,
+            suite_id = EXCLUDED.suite_id,
+            min_scores = EXCLUDED.min_scores,
+            no_regressions = EXCLUDED.no_regressions,
+            description = EXCLUDED.description
+        """,
+        rule["rule_name"], rule.get("model_id"), rule.get("suite_id"),
+        json.dumps(rule.get("min_scores", {})), rule.get("no_regressions", True),
+        rule.get("description"),
+    )
+
+
+async def get_promotion_rules(model_id: str | None = None) -> list:
+    """Get rules applicable to a model (model-specific + global)."""
+    if model_id:
+        rows = await fetch(
+            "SELECT * FROM promotion_rules WHERE model_id = $1 OR model_id IS NULL ORDER BY rule_name",
+            model_id,
+        )
+    else:
+        rows = await fetch("SELECT * FROM promotion_rules ORDER BY rule_name")
+    return [dict(r) for r in rows]
+
+
+async def upsert_webhook(webhook: dict) -> int:
+    return await fetchval(
+        """
+        INSERT INTO webhooks (url, events, active)
+        VALUES ($1, $2, $3)
+        RETURNING id
+        """,
+        webhook["url"], webhook["events"], webhook.get("active", True),
+    )
+
+
+async def get_active_webhooks(event_type: str) -> list:
+    rows = await fetch(
+        "SELECT * FROM webhooks WHERE active = TRUE AND $1 = ANY(events)",
+        event_type,
+    )
+    return [dict(r) for r in rows]
