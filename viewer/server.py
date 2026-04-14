@@ -121,6 +121,26 @@ async def ingest_eval_result(body: IngestEvalResultPayload, _=Depends(verify_ing
     return {"ok": True, "checkpoint_id": body.checkpoint_id, "dataset_name": body.dataset_name}
 
 
+@app.delete("/api/models/{model_id}")
+async def delete_model(model_id: str, _=Depends(verify_ingest_token)):
+    """Delete a model and all its checkpoints and eval results (cascading)."""
+    row = await db.fetchrow("SELECT model_id FROM models WHERE model_id = $1", model_id)
+    if not row:
+        return JSONResponse({"error": "Model not found"}, status_code=404)
+    await db.execute("DELETE FROM models WHERE model_id = $1", model_id)
+    return {"ok": True, "deleted": model_id}
+
+
+@app.delete("/api/checkpoints/{checkpoint_id}")
+async def delete_checkpoint(checkpoint_id: str, _=Depends(verify_ingest_token)):
+    """Delete a checkpoint and its eval results (cascading)."""
+    row = await db.fetchrow("SELECT checkpoint_id FROM checkpoints WHERE checkpoint_id = $1", checkpoint_id)
+    if not row:
+        return JSONResponse({"error": "Checkpoint not found"}, status_code=404)
+    await db.execute("DELETE FROM checkpoints WHERE checkpoint_id = $1", checkpoint_id)
+    return {"ok": True, "deleted": checkpoint_id}
+
+
 # ---------------------------------------------------------------------------
 # Query API: Models
 # ---------------------------------------------------------------------------

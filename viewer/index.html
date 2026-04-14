@@ -665,7 +665,11 @@ function el(tag, attrs, text) {
   return e;
 }
 
-function makeBadge(t) { return el('span', {class: 'badge badge-' + t}, t); }
+function makeBadge(t) {
+  const labels = { training: 'developing', baseline: 'reference' };
+  const label = labels[t] || t;
+  return el('span', {class: 'badge badge-' + t}, label);
+}
 
 // Detect base path: if served at /eval360/, API calls need /eval360/api/...
 const BASE_PATH = (() => {
@@ -907,6 +911,18 @@ async function viewModelDetail(app, modelId) {
   titleGrp.appendChild(el('div', {class:'detail-meta'},
     'Owner: ' + model.owner + ' \u00b7 ' + modelData.checkpoints.length + ' checkpoints' + stepText));
   hdr.appendChild(titleGrp);
+  if (diagData.latest_checkpoint) {
+    const latestCp = modelData.checkpoints.find(c => c.checkpoint_id === diagData.latest_checkpoint);
+    if (latestCp && latestCp.checkpoint_path) {
+      const pathEl = el('div', {style: 'font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-top:4px;cursor:pointer;', title: 'Click to copy'}, latestCp.checkpoint_path);
+      pathEl.addEventListener('click', () => {
+        navigator.clipboard.writeText(latestCp.checkpoint_path);
+        pathEl.style.color = 'var(--green)';
+        setTimeout(() => pathEl.style.color = 'var(--muted)', 1000);
+      });
+      hdr.appendChild(pathEl);
+    }
+  }
   wrap.appendChild(hdr);
 
   // Diagnostic panels: radar + gap analysis
@@ -939,7 +955,13 @@ async function viewModelDetail(app, modelId) {
   for (const [ds, info] of sortedDs) {
     const tr = document.createElement('tr');
 
-    tr.appendChild(el('td', {style:'font-weight:500;color:var(--text-bright)'}, ds));
+    const dsTd = el('td', {style:'font-weight:500;color:var(--text-bright)'});
+    dsTd.appendChild(document.createTextNode(ds));
+    if (info.metric_name) {
+      dsTd.appendChild(document.createTextNode(' '));
+      dsTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:11px'}, info.metric_name));
+    }
+    tr.appendChild(dsTd);
 
     const valTd = el('td', {class:'gap-value'});
     valTd.textContent = info.value.toFixed(4);
@@ -1085,7 +1107,13 @@ async function viewModelDetail(app, modelId) {
     for (const dsName of datasets) {
       const pts = dsMap.get(dsName) || [];
       const card = el('div', {class:'chart-card'});
-      card.appendChild(el('h3', null, dsName));
+      const metricName = (dsMap.get(dsName) || [])[0]?.metric_name || '';
+      const titleEl = el('h3', null, dsName);
+      if (metricName) {
+        titleEl.appendChild(document.createTextNode(' '));
+        titleEl.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:11px'}, metricName));
+      }
+      card.appendChild(titleEl);
       const cw = el('div', {class:'chart-wrap'});
       const canvas = document.createElement('canvas');
       cw.appendChild(canvas);

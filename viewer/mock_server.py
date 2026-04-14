@@ -368,6 +368,28 @@ async def get_filter_options():
     }
 
 
+@app.delete("/api/models/{model_id}")
+async def delete_model(model_id: str):
+    global MODELS, CHECKPOINTS, EVAL_RESULTS
+    if not any(m["model_id"] == model_id for m in MODELS):
+        return JSONResponse({"error": "Model not found"}, status_code=404)
+    cp_ids = {c["checkpoint_id"] for c in CHECKPOINTS if c["model_id"] == model_id}
+    EVAL_RESULTS = [e for e in EVAL_RESULTS if e["checkpoint_id"] not in cp_ids]
+    CHECKPOINTS = [c for c in CHECKPOINTS if c["model_id"] != model_id]
+    MODELS = [m for m in MODELS if m["model_id"] != model_id]
+    return {"ok": True, "deleted": model_id}
+
+
+@app.delete("/api/checkpoints/{checkpoint_id}")
+async def delete_checkpoint(checkpoint_id: str):
+    global CHECKPOINTS, EVAL_RESULTS
+    if not any(c["checkpoint_id"] == checkpoint_id for c in CHECKPOINTS):
+        return JSONResponse({"error": "Checkpoint not found"}, status_code=404)
+    EVAL_RESULTS = [e for e in EVAL_RESULTS if e["checkpoint_id"] != checkpoint_id]
+    CHECKPOINTS = [c for c in CHECKPOINTS if c["checkpoint_id"] != checkpoint_id]
+    return {"ok": True, "deleted": checkpoint_id}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Eval360 Dashboard Viewer (Mock)")
     parser.add_argument("--host", default="0.0.0.0")
