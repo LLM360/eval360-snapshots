@@ -1057,6 +1057,15 @@ async function viewModels(app) {
     const header = el('div', {class:'card-header'});
     header.appendChild(el('span', {class:'card-name'}, m.display_name));
     header.appendChild(makeBadge(m.model_type));
+    const cov = heatmapData.coverage?.[m.model_id];
+    if (cov) {
+      const covBadge = el('span', {
+        class: 'badge',
+        style: 'background:' + (cov.evaluated === cov.total ? 'var(--green-dim)' : 'var(--amber-dim)') + ';color:' + (cov.evaluated === cov.total ? 'var(--green)' : 'var(--amber)') + '; margin-left:8px;',
+        title: cov.missing.length ? 'Missing: ' + cov.missing.join(', ') : 'All benchmarks evaluated',
+      }, cov.evaluated + '/' + cov.total);
+      header.appendChild(covBadge);
+    }
     card.appendChild(header);
 
     card.appendChild(el('div', {class:'card-meta'},
@@ -1230,7 +1239,7 @@ async function viewModelDetail(app, modelId) {
 
   const gHead = document.createElement('thead');
   const gHRow = document.createElement('tr');
-  ['Benchmark', 'Score', 'Best Baseline', 'Gap', 'Trend'].forEach(c => gHRow.appendChild(el('th', null, c)));
+  ['Benchmark', 'Score', 'Best Baseline', 'Gap', 'Trend', 'Sig.'].forEach(c => gHRow.appendChild(el('th', null, c)));
   gHead.appendChild(gHRow);
   gapTable.appendChild(gHead);
 
@@ -1251,6 +1260,10 @@ async function viewModelDetail(app, modelId) {
     const valTd = el('td', {class:'gap-value'});
     valTd.textContent = info.value.toFixed(4);
     valTd.style.color = scoreColor(info.value);
+    if (info.sample_count != null) {
+      valTd.appendChild(document.createTextNode(' '));
+      valTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:10px'}, 'n=' + info.sample_count));
+    }
     tr.appendChild(valTd);
 
     const blTd = document.createElement('td');
@@ -1271,6 +1284,21 @@ async function viewModelDetail(app, modelId) {
     trendTd.textContent = trendIcon(info.trend);
     tr.appendChild(trendTd);
 
+    const sigTd = el('td', {style: 'text-align:center'});
+    const sig = info.significance || 'insufficient_data';
+    const sigMap = {
+      likely_real: {icon: '\u25cf', class: info.gap >= 0 ? 'gap-positive' : 'gap-negative', tip: 'CIs do not overlap \u2014 likely real'},
+      likely_noise: {icon: '~', class: 'gap-neutral', tip: 'CIs overlap significantly \u2014 likely noise'},
+      uncertain: {icon: '?', class: 'trend-flat', tip: 'Partial CI overlap \u2014 uncertain'},
+      insufficient_data: {icon: '\u2014', class: 'gap-neutral', tip: 'Insufficient data for CI comparison'},
+    };
+    const s = sigMap[sig] || sigMap.insufficient_data;
+    sigTd.textContent = s.icon;
+    sigTd.className = s.class;
+    sigTd.title = s.tip;
+    sigTd.style.cursor = 'help';
+    tr.appendChild(sigTd);
+
     gBody.appendChild(tr);
   }
 
@@ -1285,13 +1313,20 @@ async function viewModelDetail(app, modelId) {
     const gaps = sortedDs.map(([ds, info]) => {
       const myScore = info.value;
       const refScore = refScores[ds];
-      if (refScore == null || myScore == null) return { ds, gap: null };
-      return { ds, gap: myScore - refScore };
+      if (refScore == null || myScore == null) return { ds, gap: null, significance: info.significance };
+      return { ds, gap: myScore - refScore, significance: info.significance };
     }).filter(g => g.gap != null).sort((a, b) => a.gap - b.gap); // worst first
 
     if (deltaChart) { deltaChart.destroy(); _charts = _charts.filter(c => c !== deltaChart); }
 
     deltaPanelTitle.textContent = 'Gap Analysis vs ' + refName;
+
+    const barColors = gaps.map(g => {
+      const gap = g.gap || 0;
+      const sig = g.significance || 'insufficient_data';
+      const alpha = sig === 'likely_noise' ? '66' : sig === 'insufficient_data' ? '99' : 'ff';
+      return gap >= 0 ? '#34d399' + alpha : '#f87171' + alpha;
+    });
 
     deltaChart = new Chart(deltaCanvas, {
       type: 'bar',
@@ -1300,7 +1335,7 @@ async function viewModelDetail(app, modelId) {
         datasets: [{
           label: 'Gap',
           data: gaps.map(g => g.gap),
-          backgroundColor: gaps.map(g => g.gap >= 0 ? '#34d399' : '#f87171'),
+          backgroundColor: barColors,
           borderColor: gaps.map(g => g.gap >= 0 ? '#34d399' : '#f87171'),
           borderWidth: 1,
           borderRadius: 3,
@@ -1388,6 +1423,10 @@ async function viewModelDetail(app, modelId) {
       const valTd = el('td', {class:'gap-value'});
       valTd.textContent = info.value.toFixed(4);
       valTd.style.color = scoreColor(info.value);
+      if (info.sample_count != null) {
+        valTd.appendChild(document.createTextNode(' '));
+        valTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:10px'}, 'n=' + info.sample_count));
+      }
       tr.appendChild(valTd);
 
       const blTd = document.createElement('td');
@@ -1408,6 +1447,21 @@ async function viewModelDetail(app, modelId) {
       trendTd.textContent = trendIcon(info.trend);
       tr.appendChild(trendTd);
 
+      const sigTd = el('td', {style: 'text-align:center'});
+      const sig = info.significance || 'insufficient_data';
+      const sigMap = {
+        likely_real: {icon: '\u25cf', class: info.gap >= 0 ? 'gap-positive' : 'gap-negative', tip: 'CIs do not overlap \u2014 likely real'},
+        likely_noise: {icon: '~', class: 'gap-neutral', tip: 'CIs overlap significantly \u2014 likely noise'},
+        uncertain: {icon: '?', class: 'trend-flat', tip: 'Partial CI overlap \u2014 uncertain'},
+        insufficient_data: {icon: '\u2014', class: 'gap-neutral', tip: 'Insufficient data for CI comparison'},
+      };
+      const s = sigMap[sig] || sigMap.insufficient_data;
+      sigTd.textContent = s.icon;
+      sigTd.className = s.class;
+      sigTd.title = s.tip;
+      sigTd.style.cursor = 'help';
+      tr.appendChild(sigTd);
+
       gBody.appendChild(tr);
     }
   }
@@ -1427,12 +1481,28 @@ async function viewModelDetail(app, modelId) {
     compareSelect.appendChild(opt);
   }
   compareBar.appendChild(compareSelect);
+  const commonToggle = document.createElement('input');
+  commonToggle.type = 'checkbox';
+  commonToggle.id = 'common-only';
+  const commonLabel = el('label', {for: 'common-only', style: 'color:var(--muted);font-size:12px;cursor:pointer'}, 'Common benchmarks only');
+  compareBar.appendChild(commonToggle);
+  compareBar.appendChild(commonLabel);
   const updateBtn = el('button', {class:'btn'}, 'Update Charts');
   compareBar.appendChild(updateBtn);
   wrap.appendChild(compareBar);
 
   // Section head for training curves
-  wrap.appendChild(el('div', {class:'section-head'}, 'Training Curves'));
+  const curvesHead = el('div', {class:'section-head', style:'display:flex;align-items:center;justify-content:space-between'});
+  curvesHead.appendChild(document.createTextNode('Training Curves'));
+  const bandControls = el('span', {style:'display:flex;align-items:center'});
+  const bandToggle = document.createElement('input');
+  bandToggle.type = 'checkbox';
+  bandToggle.id = 'show-bands';
+  const bandLabel = el('label', {for: 'show-bands', style: 'color:var(--muted);font-size:12px;cursor:pointer;margin-left:16px'}, 'Show uncertainty');
+  bandControls.appendChild(bandToggle);
+  bandControls.appendChild(bandLabel);
+  curvesHead.appendChild(bandControls);
+  wrap.appendChild(curvesHead);
 
   // Chart grid
   const chartGrid = el('div', {class:'chart-grid'});
@@ -1461,16 +1531,33 @@ async function viewModelDetail(app, modelId) {
     _charts = [...keep];
     clearNode(chartGrid);
 
+    const useCommonOnly = commonToggle.checked;
+    const showBands = bandToggle.checked;
+
     let compareByDs = {};
+    let commonDatasets = null;
     if (compareIds.length > 0) {
       const allIds = [modelId, ...compareIds].join(',');
+      const commonParam = useCommonOnly ? '&common_only=true' : '';
       const results = await Promise.allSettled(
-        datasets.map(ds => api('/api/compare?models=' + encodeURIComponent(allIds) + '&dataset=' + encodeURIComponent(ds)))
+        datasets.map(ds => api('/api/compare?models=' + encodeURIComponent(allIds) + '&dataset=' + encodeURIComponent(ds) + commonParam))
       );
       datasets.forEach((ds, i) => { if (results[i].status === 'fulfilled') compareByDs[ds] = results[i].value; });
+
+      // If common_only, filter to datasets present in compareByDs that have data for all models
+      if (useCommonOnly) {
+        commonDatasets = new Set();
+        for (const [ds, cData] of Object.entries(compareByDs)) {
+          if (cData.models && cData.models.length === compareIds.length + 1) {
+            commonDatasets.add(ds);
+          }
+        }
+      }
     }
 
-    for (const dsName of datasets) {
+    const renderDs = commonDatasets ? datasets.filter(ds => commonDatasets.has(ds)) : datasets;
+
+    for (const dsName of renderDs) {
       const pts = dsMap.get(dsName) || [];
       const card = el('div', {class:'chart-card'});
       const metricName = (dsMap.get(dsName) || [])[0]?.metric_name || '';
@@ -1505,6 +1592,30 @@ async function viewModelDetail(app, modelId) {
               borderColor: color, backgroundColor: color+'22', borderWidth:2,
               pointRadius:2.5, pointHoverRadius:5, tension:0.3,
             });
+            // Error bands for training models
+            if (showBands && mEntry.data_points.some(p => p.ci_lower != null && p.ci_upper != null)) {
+              chartDatasets.push({
+                label: mEntry.display_name + ' CI upper',
+                data: mEntry.data_points.filter(p => p.ci_upper != null).map(p => ({x: p.training_step, y: p.ci_upper})),
+                borderColor: 'transparent',
+                backgroundColor: color + '1a',
+                pointRadius: 0,
+                fill: '+1',
+                borderWidth: 0,
+                hidden: false,
+                _isCIBand: true,
+              });
+              chartDatasets.push({
+                label: mEntry.display_name + ' CI lower',
+                data: mEntry.data_points.filter(p => p.ci_lower != null).map(p => ({x: p.training_step, y: p.ci_lower})),
+                borderColor: 'transparent',
+                backgroundColor: 'transparent',
+                pointRadius: 0,
+                borderWidth: 0,
+                hidden: false,
+                _isCIBand: true,
+              });
+            }
           }
         }
       } else {
@@ -1515,6 +1626,30 @@ async function viewModelDetail(app, modelId) {
           borderColor: color, backgroundColor: color+'22', borderWidth:2,
           pointRadius:2.5, pointHoverRadius:5, tension:0.3,
         });
+        // Error bands for single model view
+        if (showBands && pts.some(p => p.ci_lower != null && p.ci_upper != null)) {
+          chartDatasets.push({
+            label: model.display_name + ' CI upper',
+            data: pts.filter(p => p.ci_upper != null).map(p => ({x: p.training_step, y: p.ci_upper})),
+            borderColor: 'transparent',
+            backgroundColor: color + '1a',
+            pointRadius: 0,
+            fill: '+1',
+            borderWidth: 0,
+            hidden: false,
+            _isCIBand: true,
+          });
+          chartDatasets.push({
+            label: model.display_name + ' CI lower',
+            data: pts.filter(p => p.ci_lower != null).map(p => ({x: p.training_step, y: p.ci_lower})),
+            borderColor: 'transparent',
+            backgroundColor: 'transparent',
+            pointRadius: 0,
+            borderWidth: 0,
+            hidden: false,
+            _isCIBand: true,
+          });
+        }
       }
 
       // Auto-scale y-axis
@@ -1534,10 +1669,18 @@ async function viewModelDetail(app, modelId) {
             y: { min:yMin, max:yMax, ticks:{color:'#6b7a8d', maxTicksLimit:5, font:{size:11,family:'JetBrains Mono'}}, grid:{color:'#1e2733'} },
           },
           plugins: {
-            legend: { labels:{color:'#d4dce8', boxWidth:12, font:{size:11}} },
+            legend: {
+              labels:{
+                color:'#d4dce8', boxWidth:12, font:{size:11},
+                filter: function(item, chartData) {
+                  return !chartData.datasets[item.datasetIndex]._isCIBand;
+                },
+              },
+            },
             tooltip: {
               backgroundColor:'#141a22', borderColor:'#2a3444', borderWidth:1, titleColor:'#f0f4f8', bodyColor:'#8b9bb0',
-              callbacks: { label(ctx) { const r=ctx.raw; return ctx.dataset.label+': '+r.y.toFixed(4)+(r.x!=null?' (step '+r.x+')':''); } },
+              callbacks: { label(ctx) { if (ctx.dataset._isCIBand) return null; const r=ctx.raw; return ctx.dataset.label+': '+r.y.toFixed(4)+(r.x!=null?' (step '+r.x+')':''); } },
+              filter: function(tooltipItem) { return !tooltipItem.dataset._isCIBand; },
             },
           },
         },
@@ -1547,9 +1690,17 @@ async function viewModelDetail(app, modelId) {
   }
 
   await renderCurves([]);
+
+  function getSelectedCompareIds() {
+    return Array.from(compareSelect.selectedOptions).map(o => o.value);
+  }
+
   updateBtn.addEventListener('click', async () => {
-    const sel = Array.from(compareSelect.selectedOptions).map(o => o.value);
-    await renderCurves(sel);
+    await renderCurves(getSelectedCompareIds());
+  });
+
+  bandToggle.addEventListener('change', async () => {
+    await renderCurves(getSelectedCompareIds());
   });
 }
 
