@@ -394,8 +394,41 @@ main {
   margin-bottom: 16px;
 }
 
-/* Radar chart */
-.radar-wrap { position: relative; height: 320px; }
+/* Delta bar chart (replaces radar) */
+.delta-bar-wrap { position: relative; height: 320px; }
+
+/* Checkpoint info strip */
+.ckpt-strip {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 20px;
+  font-family: var(--font-mono);
+}
+.ckpt-strip .ckpt-item { white-space: nowrap; }
+.ckpt-strip .ckpt-sep { color: var(--border-2); }
+.ckpt-strip .ckpt-val { color: var(--text-bright); font-weight: 600; }
+
+/* Provenance tooltip */
+.provenance-tooltip {
+  position: fixed;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 12px;
+  max-width: 320px;
+  z-index: 200;
+  pointer-events: none;
+  display: none;
+  box-shadow: var(--shadow-lg);
+}
+.provenance-tooltip .tt-row { display: flex; gap: 8px; margin-bottom: 3px; }
+.provenance-tooltip .tt-label { color: var(--muted); min-width: 80px; }
+.provenance-tooltip .tt-value { color: var(--text); font-family: var(--font-mono); font-size: 11px; }
 
 /* Gap analysis table */
 .gap-table { width: 100%; border-collapse: collapse; }
@@ -636,6 +669,8 @@ select option { background: var(--surface); }
   <div class="loading">Loading...</div>
 </main>
 
+<div class="provenance-tooltip" id="provTooltip"></div>
+
 <script>
 /* ===================================================================
    COLOR SYSTEM
@@ -752,6 +787,106 @@ function showDeleteConfirm(modelId, displayName) {
   document.body.appendChild(overlay);
 }
 
+/* ===================================================================
+   PROVENANCE TOOLTIP
+   =================================================================== */
+const _provenanceCache = new Map();
+
+async function fetchProvenance(evalRunId) {
+  if (_provenanceCache.has(evalRunId)) return _provenanceCache.get(evalRunId);
+  try {
+    const data = await api('/api/eval-runs/' + encodeURIComponent(evalRunId));
+    _provenanceCache.set(evalRunId, data);
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+function showProvTooltip(cell, evalRunId, status) {
+  const tt = document.getElementById('provTooltip');
+  fetchProvenance(evalRunId).then(data => {
+    if (!data) return;
+    let html = '';
+    if (status === 'failed' && data.error_message) {
+      html = '<div class="tt-row"><span class="tt-label">Error</span><span class="tt-value" style="color:var(--red)">' + escHtml(data.error_message) + '</span></div>';
+    } else {
+      if (data.grader_type) html += '<div class="tt-row"><span class="tt-label">Grader</span><span class="tt-value">' + escHtml(data.grader_type + (data.grader_version ? ' v' + data.grader_version : '')) + '</span></div>';
+      if (data.sample_count != null) html += '<div class="tt-row"><span class="tt-label">Samples</span><span class="tt-value">' + data.sample_count + '</span></div>';
+      if (data.inference_config && Object.keys(data.inference_config).length > 0) {
+        const summary = Object.entries(data.inference_config).map(([k,v]) => k + '=' + v).join(', ');
+        html += '<div class="tt-row"><span class="tt-label">Inference</span><span class="tt-value">' + escHtml(summary) + '</span></div>';
+      }
+      if (data.dataset_version) html += '<div class="tt-row"><span class="tt-label">Version</span><span class="tt-value">' + escHtml(data.dataset_version) + '</span></div>';
+      if (data.dataset_split) html += '<div class="tt-row"><span class="tt-label">Split</span><span class="tt-value">' + escHtml(data.dataset_split) + '</span></div>';
+      if (data.ingested_at) html += '<div class="tt-row"><span class="tt-label">Ingested</span><span class="tt-value">' + escHtml(data.ingested_at) + '</span></div>';
+    }
+    if (!html) html = '<div class="tt-row"><span class="tt-value">No provenance data</span></div>';
+    tt.innerHTML = html;
+    const rect = cell.getBoundingClientRect();
+    tt.style.left = Math.min(rect.left, window.innerWidth - 340) + 'px';
+    tt.style.top = (rect.bottom + 6) + 'px';
+    tt.style.display = 'block';
+  });
+}
+
+function hideProvTooltip() {
+  document.getElementById('provTooltip').style.display = 'none';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ===================================================================
+   SCORE CELL RENDERING (state-aware)
+   =================================================================== */
+function renderScoreCell(td, entry, bestVal) {
+  td.className = 'score-cell';
+  if (!entry) {
+    // Not run
+    td.textContent = '\u2014';
+    td.style.color = 'var(--muted)';
+    return;
+  }
+  const status = entry.status || 'completed';
+  const v = entry.score;
+  if (status === 'completed' && v != null) {
+    td.textContent = v.toFixed(2);
+    td.style.color = scoreColor(v);
+    td.style.background = scoreBg(v);
+    if (bestVal != null && Math.abs(v - bestVal) < 0.0001) td.classList.add('best-in-col');
+    if (entry.eval_run_id) {
+      td.dataset.evalRunId = entry.eval_run_id;
+      td.dataset.status = status;
+      td.addEventListener('mouseenter', function() { showProvTooltip(this, entry.eval_run_id, status); });
+      td.addEventListener('mouseleave', hideProvTooltip);
+    }
+  } else if (status === 'pending' || status === 'running') {
+    td.textContent = '\u23f3';
+    td.style.color = 'var(--accent)';
+    td.style.opacity = '0.5';
+  } else if (status === 'failed') {
+    td.textContent = '\u2717';
+    td.style.color = 'var(--red)';
+    td.style.opacity = '0.7';
+    if (entry.eval_run_id) {
+      td.dataset.evalRunId = entry.eval_run_id;
+      td.dataset.status = status;
+      td.addEventListener('mouseenter', function() { showProvTooltip(this, entry.eval_run_id, status); });
+      td.addEventListener('mouseleave', hideProvTooltip);
+    }
+  } else if (status === 'invalidated') {
+    td.textContent = '\u26a0';
+    td.style.color = 'var(--amber)';
+    td.style.opacity = '0.7';
+  } else {
+    // Fallback for completed with null score or unknown status
+    td.textContent = '\u2014';
+    td.style.color = 'var(--muted)';
+  }
+}
+
 // Detect base path: if served at /eval360/, API calls need /eval360/api/...
 const BASE_PATH = (() => {
   const p = window.location.pathname;
@@ -832,7 +967,8 @@ async function viewObservatory(app) {
   for (const ds of data.datasets) {
     let best = -1;
     for (const m of data.models) {
-      const v = (data.matrix[m.model_id] || {})[ds];
+      const entry = (data.matrix[m.model_id] || {})[ds];
+      const v = entry && entry.score != null ? entry.score : null;
       if (v != null && v > best) best = v;
     }
     bestPerDs[ds] = best;
@@ -887,17 +1023,8 @@ async function viewObservatory(app) {
     const scores = data.matrix[m.model_id] || {};
     for (const ds of data.datasets) {
       const td = document.createElement('td');
-      td.className = 'score-cell';
-      const v = scores[ds];
-      if (v != null) {
-        td.textContent = v.toFixed(2);
-        td.style.color = scoreColor(v);
-        td.style.background = scoreBg(v);
-        if (Math.abs(v - bestPerDs[ds]) < 0.0001) td.classList.add('best-in-col');
-      } else {
-        td.textContent = '\u2014';
-        td.style.color = 'var(--muted)';
-      }
+      const entry = scores[ds] || null;
+      renderScoreCell(td, entry, bestPerDs[ds]);
       tr.appendChild(td);
     }
 
@@ -939,11 +1066,31 @@ async function viewModels(app) {
     const scores = heatmapData.matrix[m.model_id] || {};
     const chipWrap = el('div', {class:'card-scores'});
     const entries = Object.entries(scores).sort((a,b) => a[0].localeCompare(b[0])).slice(0, 6);
-    for (const [ds, v] of entries) {
+    for (const [ds, entry] of entries) {
+      const v = entry && entry.score != null ? entry.score : null;
+      const status = entry ? (entry.status || 'completed') : null;
       const chip = el('div', {class:'card-score-chip'});
       chip.appendChild(el('span', {class:'ds-name'}, ds));
-      const valSpan = el('span', {class:'ds-val'}, v.toFixed(2));
-      valSpan.style.color = scoreColor(v);
+      let valSpan;
+      if (status === 'completed' && v != null) {
+        valSpan = el('span', {class:'ds-val'}, v.toFixed(2));
+        valSpan.style.color = scoreColor(v);
+      } else if (status === 'pending' || status === 'running') {
+        valSpan = el('span', {class:'ds-val'}, '\u23f3');
+        valSpan.style.color = 'var(--accent)';
+        valSpan.style.opacity = '0.5';
+      } else if (status === 'failed') {
+        valSpan = el('span', {class:'ds-val'}, '\u2717');
+        valSpan.style.color = 'var(--red)';
+        valSpan.style.opacity = '0.7';
+      } else if (status === 'invalidated') {
+        valSpan = el('span', {class:'ds-val'}, '\u26a0');
+        valSpan.style.color = 'var(--amber)';
+        valSpan.style.opacity = '0.7';
+      } else {
+        valSpan = el('span', {class:'ds-val'}, '\u2014');
+        valSpan.style.color = 'var(--muted)';
+      }
       chip.appendChild(valSpan);
       chipWrap.appendChild(chip);
     }
@@ -1009,17 +1156,71 @@ async function viewModelDetail(app, modelId) {
   }
   wrap.appendChild(hdr);
 
-  // Diagnostic panels: radar + gap analysis
+  // Checkpoint info strip
+  const ckptStrip = el('div', {class:'ckpt-strip'});
+  if (diagData.latest_step) {
+    const latestItem = el('span', {class:'ckpt-item'});
+    latestItem.appendChild(document.createTextNode('Latest: step '));
+    latestItem.appendChild(el('span', {class:'ckpt-val'}, String(diagData.latest_step)));
+    ckptStrip.appendChild(latestItem);
+  }
+  if (diagData.best_overall_step) {
+    ckptStrip.appendChild(el('span', {class:'ckpt-sep'}, '|'));
+    const bestItem = el('span', {class:'ckpt-item'});
+    bestItem.appendChild(document.createTextNode('Best overall: step '));
+    bestItem.appendChild(el('span', {class:'ckpt-val'}, String(diagData.best_overall_step)));
+    ckptStrip.appendChild(bestItem);
+  }
+  if (diagData.best_per_dataset && Object.keys(diagData.best_per_dataset).length > 0) {
+    // Show the dataset with the biggest gap (most negative first in sortedDs later, but pick from best_per_dataset)
+    const bpd = diagData.best_per_dataset;
+    const dsEntries = Object.entries(diagData.scores || {}).sort((a, b) => (a[1].gap || 0) - (b[1].gap || 0));
+    const worstDs = dsEntries.length > 0 ? dsEntries[0][0] : Object.keys(bpd).sort()[0];
+    if (worstDs && bpd[worstDs]) {
+      ckptStrip.appendChild(el('span', {class:'ckpt-sep'}, '|'));
+      const dsItem = el('span', {class:'ckpt-item'});
+      dsItem.appendChild(document.createTextNode('Best on ' + worstDs + ': step '));
+      dsItem.appendChild(el('span', {class:'ckpt-val'}, String(bpd[worstDs])));
+      ckptStrip.appendChild(dsItem);
+    }
+  }
+  if (ckptStrip.children.length > 0) wrap.appendChild(ckptStrip);
+
+  // Diagnostic panels: delta bar chart + gap analysis
   const diagGrid = el('div', {class:'diag-grid'});
 
-  // -- Radar Chart --
-  const radarPanel = el('div', {class:'panel'});
-  radarPanel.appendChild(el('div', {class:'panel-title'}, 'Capability Profile'));
-  const radarWrap = el('div', {class:'radar-wrap'});
-  const radarCanvas = document.createElement('canvas');
-  radarWrap.appendChild(radarCanvas);
-  radarPanel.appendChild(radarWrap);
-  diagGrid.appendChild(radarPanel);
+  // -- Delta Bar Chart --
+  const deltaPanel = el('div', {class:'panel'});
+  const deltaPanelTitle = el('div', {class:'panel-title'}, 'Gap Analysis vs Best Baseline');
+  deltaPanel.appendChild(deltaPanelTitle);
+
+  // Reference selector
+  const refSelectWrap = el('div', {style:'margin-bottom:12px'});
+  const refLabel = el('label', {style:'font-size:12px;color:var(--muted);margin-right:8px'}, 'Reference:');
+  refSelectWrap.appendChild(refLabel);
+  const refSelect = document.createElement('select');
+  refSelect.style.fontSize = '12px';
+  const defaultRefOpt = document.createElement('option');
+  defaultRefOpt.value = '__best_baseline__';
+  defaultRefOpt.textContent = 'Best baseline (default)';
+  refSelect.appendChild(defaultRefOpt);
+  for (const m of allModels.models) {
+    if (m.model_id === modelId) continue;
+    const opt = document.createElement('option');
+    opt.value = m.model_id;
+    opt.textContent = m.display_name + ' (' + m.model_type + ')';
+    refSelect.appendChild(opt);
+  }
+  refSelectWrap.appendChild(refSelect);
+  deltaPanel.appendChild(refSelectWrap);
+
+  const deltaWrap = el('div', {class:'delta-bar-wrap'});
+  const deltaCanvas = document.createElement('canvas');
+  deltaWrap.appendChild(deltaCanvas);
+  deltaPanel.appendChild(deltaWrap);
+  diagGrid.appendChild(deltaPanel);
+
+  let deltaChart = null;
 
   // -- Gap Analysis --
   const gapPanel = el('div', {class:'panel'});
@@ -1078,57 +1279,138 @@ async function viewModelDetail(app, modelId) {
   diagGrid.appendChild(gapPanel);
   wrap.appendChild(diagGrid);
 
-  // Render radar chart
-  const radarLabels = sortedDs.map(([ds]) => ds);
-  const radarValues = sortedDs.map(([_, info]) => info.value);
-  const radarBaseline = sortedDs.map(([_, info]) => info.baseline_best || 0);
+  // Render delta bar chart
+  function buildDeltaChart(refScores, refName) {
+    // refScores: { datasetName: score } for the reference
+    const gaps = sortedDs.map(([ds, info]) => {
+      const myScore = info.value;
+      const refScore = refScores[ds];
+      if (refScore == null || myScore == null) return { ds, gap: null };
+      return { ds, gap: myScore - refScore };
+    }).filter(g => g.gap != null).sort((a, b) => a.gap - b.gap); // worst first
 
-  const radarChart = new Chart(radarCanvas, {
-    type: 'radar',
-    data: {
-      labels: radarLabels,
-      datasets: [
-        {
-          label: model.display_name,
-          data: radarValues,
-          borderColor: modelColor(modelId),
-          backgroundColor: modelColor(modelId) + '22',
-          borderWidth: 2,
-          pointRadius: 4,
-          pointBackgroundColor: modelColor(modelId),
+    if (deltaChart) { deltaChart.destroy(); _charts = _charts.filter(c => c !== deltaChart); }
+
+    deltaPanelTitle.textContent = 'Gap Analysis vs ' + refName;
+
+    deltaChart = new Chart(deltaCanvas, {
+      type: 'bar',
+      data: {
+        labels: gaps.map(g => g.ds),
+        datasets: [{
+          label: 'Gap',
+          data: gaps.map(g => g.gap),
+          backgroundColor: gaps.map(g => g.gap >= 0 ? '#34d399' : '#f87171'),
+          borderColor: gaps.map(g => g.gap >= 0 ? '#34d399' : '#f87171'),
+          borderWidth: 1,
+          borderRadius: 3,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            grid: { color: '#1e2733' },
+            ticks: { color: '#6b7a8d', font: { size: 11, family: 'JetBrains Mono' } },
+          },
+          y: {
+            grid: { display: false },
+            ticks: { color: '#8b9bb0', font: { size: 11, family: 'Outfit' } },
+          },
         },
-        {
-          label: 'Best Baseline',
-          data: radarBaseline,
-          borderColor: '#6b7a8d',
-          backgroundColor: 'rgba(107,122,141,0.08)',
-          borderWidth: 1.5,
-          borderDash: [4, 3],
-          pointRadius: 3,
-          pointBackgroundColor: '#6b7a8d',
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        r: {
-          beginAtZero: true,
-          max: 1,
-          ticks: { stepSize: 0.2, color: '#4a5568', font: { size: 10 }, backdropColor: 'transparent' },
-          grid: { color: '#1e2733' },
-          angleLines: { color: '#1e2733' },
-          pointLabels: { color: '#8b9bb0', font: { size: 11, family: 'Outfit' } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#141a22', borderColor: '#2a3444', borderWidth: 1,
+            titleColor: '#f0f4f8', bodyColor: '#8b9bb0',
+            callbacks: { label(ctx) { const v = ctx.raw; return (v > 0 ? '+' : '') + v.toFixed(4); } },
+          },
         },
       },
-      plugins: {
-        legend: { labels: { color: '#d4dce8', boxWidth: 12, font: { size: 12 } } },
-        tooltip: { backgroundColor: '#141a22', borderColor: '#2a3444', borderWidth: 1, titleColor: '#f0f4f8', bodyColor: '#8b9bb0' },
-      },
-    },
+    });
+    _charts.push(deltaChart);
+  }
+
+  // Default: best baseline reference
+  const defaultRefScores = {};
+  for (const [ds, info] of sortedDs) {
+    defaultRefScores[ds] = info.baseline_best;
+  }
+  buildDeltaChart(defaultRefScores, 'Best Baseline');
+
+  // Reference selector change handler
+  refSelect.addEventListener('change', async () => {
+    const refId = refSelect.value;
+    if (refId === '__best_baseline__') {
+      buildDeltaChart(defaultRefScores, 'Best Baseline');
+      // Also rebuild gap table with default data
+      rebuildGapTable(diagData.scores);
+    } else {
+      try {
+        const refData = await api('/api/models/' + encodeURIComponent(refId) + '/scores');
+        const refScores = {};
+        const refName = allModels.models.find(m => m.model_id === refId)?.display_name || refId;
+        for (const s of refData.scores) {
+          if (s.is_primary) refScores[s.dataset_name] = s.metric_value;
+        }
+        buildDeltaChart(refScores, refName);
+        // Rebuild gap table with new reference
+        const newGapData = {};
+        for (const [ds, info] of sortedDs) {
+          const refVal = refScores[ds];
+          const gap = (refVal != null && info.value != null) ? info.value - refVal : null;
+          newGapData[ds] = { ...info, baseline_best: refVal, baseline_model: refName, gap };
+        }
+        rebuildGapTable(newGapData);
+      } catch (e) {
+        console.error('Failed to fetch reference scores:', e);
+      }
+    }
   });
-  _charts.push(radarChart);
+
+  // Gap table rebuild function (for reference selector changes)
+  function rebuildGapTable(gapData) {
+    clearNode(gBody);
+    const newSorted = Object.entries(gapData).sort((a, b) => (a[1].gap || 0) - (b[1].gap || 0));
+    for (const [ds, info] of newSorted) {
+      const tr = document.createElement('tr');
+
+      const dsTd = el('td', {style:'font-weight:500;color:var(--text-bright)'});
+      dsTd.appendChild(document.createTextNode(ds));
+      if (info.metric_name) {
+        dsTd.appendChild(document.createTextNode(' '));
+        dsTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:11px'}, info.metric_name));
+      }
+      tr.appendChild(dsTd);
+
+      const valTd = el('td', {class:'gap-value'});
+      valTd.textContent = info.value.toFixed(4);
+      valTd.style.color = scoreColor(info.value);
+      tr.appendChild(valTd);
+
+      const blTd = document.createElement('td');
+      if (info.baseline_best != null) {
+        blTd.appendChild(el('span', {class:'gap-value', style:'color:var(--muted)'}, info.baseline_best.toFixed(4)));
+        blTd.appendChild(document.createTextNode(' '));
+        blTd.appendChild(el('span', {style:'font-size:11px;color:var(--muted)'}, info.baseline_model || ''));
+      } else {
+        blTd.textContent = '\u2014';
+      }
+      tr.appendChild(blTd);
+
+      const gapTd = el('td', {class:'gap-value ' + gapClass(info.gap)});
+      gapTd.textContent = info.gap != null ? (info.gap > 0 ? '+' : '') + info.gap.toFixed(4) : '\u2014';
+      tr.appendChild(gapTd);
+
+      const trendTd = el('td', {class:'trend-icon trend-' + info.trend});
+      trendTd.textContent = trendIcon(info.trend);
+      tr.appendChild(trendTd);
+
+      gBody.appendChild(tr);
+    }
+  }
 
   // Compare controls
   const compareBar = el('div', {class:'compare-bar'});
@@ -1173,8 +1455,8 @@ async function viewModelDetail(app, modelId) {
   const xMax = allSteps.length ? Math.max(...allSteps) : 1;
 
   async function renderCurves(compareIds) {
-    // Destroy only line charts, keep radar
-    const keep = [radarChart];
+    // Destroy only line charts, keep delta bar chart
+    const keep = deltaChart ? [deltaChart] : [];
     _charts.filter(c => !keep.includes(c)).forEach(c => { try { c.destroy(); } catch(_){} });
     _charts = [...keep];
     clearNode(chartGrid);
@@ -1310,7 +1592,8 @@ async function viewLeaderboard(app) {
   for (const ds of data.datasets) {
     let best = -1;
     for (const m of data.models) {
-      const v = (data.matrix[m.model_id] || {})[ds];
+      const entry = (data.matrix[m.model_id] || {})[ds];
+      const v = entry && entry.score != null ? entry.score : null;
       if (v != null && v > best) best = v;
     }
     bestPerDs[ds] = best;
@@ -1338,8 +1621,10 @@ async function viewLeaderboard(app) {
     let sorted = [...data.models];
     if (sortDs) {
       sorted.sort((a, b) => {
-        const va = (data.matrix[a.model_id] || {})[sortDs] ?? -1;
-        const vb = (data.matrix[b.model_id] || {})[sortDs] ?? -1;
+        const entryA = (data.matrix[a.model_id] || {})[sortDs];
+        const entryB = (data.matrix[b.model_id] || {})[sortDs];
+        const va = entryA && entryA.score != null ? entryA.score : -1;
+        const vb = entryB && entryB.score != null ? entryB.score : -1;
         return vb - va;
       });
     }
@@ -1363,17 +1648,8 @@ async function viewLeaderboard(app) {
       const scores = data.matrix[m.model_id] || {};
       for (const ds of data.datasets) {
         const td = document.createElement('td');
-        td.className = 'score-cell';
-        const v = scores[ds];
-        if (v != null) {
-          td.textContent = v.toFixed(2);
-          td.style.color = scoreColor(v);
-          td.style.background = scoreBg(v);
-          if (Math.abs(v - bestPerDs[ds]) < 0.0001) td.classList.add('best-in-col');
-        } else {
-          td.textContent = '\u2014';
-          td.style.color = 'var(--muted)';
-        }
+        const entry = scores[ds] || null;
+        renderScoreCell(td, entry, bestPerDs[ds]);
         tr.appendChild(td);
       }
 
