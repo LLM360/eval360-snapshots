@@ -93,15 +93,32 @@ _DATASET_GRADER = {
 
 # Sample count per dataset
 _DATASET_SAMPLES = {
+    "aime": 30,
     "bbh": 250,
     "math500": 500,
     "humaneval": 164,
     "ifeval": 541,
     "gsm8k": 1319,
     "arc_challenge": 1172,
-    "mmlu_pro": 500,
-    "mbpp": 374,
+    "mmlu_pro": 1000,
+    "mbpp": 378,
 }
+
+
+def _compute_ci(primary_val: float, sample_n: int | None) -> tuple:
+    """Return (ci_lower, ci_upper, stderr, sample_count) for a proportion metric.
+
+    Returns (None, None, None, None) when sample_n is None (insufficient data).
+    """
+    if sample_n is None:
+        return None, None, None, None
+    if sample_n > 0 and 0 < primary_val < 1:
+        se = math.sqrt(primary_val * (1 - primary_val) / sample_n)
+    else:
+        se = 0.0
+    ci_lower = max(0.0, round(primary_val - 1.96 * se, 6))
+    ci_upper = min(1.0, round(primary_val + 1.96 * se, 6))
+    return ci_lower, ci_upper, round(se, 6), sample_n
 
 
 def seed_data():
@@ -183,13 +200,15 @@ def seed_data():
                     })
                 else:
                     # completed: both eval_run and eval_result
+                    sample_n = _DATASET_SAMPLES.get(ds_name, 30)
+                    ci_lower, ci_upper, se, sc = _compute_ci(primary_val, sample_n)
                     EVAL_RUNS.append({
                         "eval_run_id": run_id,
                         "checkpoint_id": cp_id,
                         "dataset_name": ds_name,
                         "status": "completed",
                         "grader_type": _DATASET_GRADER.get(ds_name, "exact_match"),
-                        "sample_count": _DATASET_SAMPLES.get(ds_name, 30),
+                        "sample_count": sample_n,
                         "inference_config": {"temperature": 0.0},
                         "dataset_version": "1.0.0",
                         "dataset_split": "test",
@@ -199,6 +218,8 @@ def seed_data():
                         "checkpoint_id": cp_id, "dataset_name": ds_name,
                         "metric_name": ds_info["primary"], "metric_value": primary_val,
                         "is_primary": True, "eval_config": {}, "eval_run_id": run_id,
+                        "ci_lower": ci_lower, "ci_upper": ci_upper,
+                        "stderr": se, "sample_count": sc,
                         "ingested_at": _now(),
                     })
                     for extra_name, offset in ds_info.get("extra", {}).items():
@@ -209,6 +230,14 @@ def seed_data():
                             "is_primary": False, "eval_config": {}, "eval_run_id": run_id,
                             "ingested_at": _now(),
                         })
+
+    # These (model_id, dataset_name) pairs intentionally omit CI to exercise the
+    # "insufficient_data" significance path.
+    _NO_CI_BASELINE = {
+        ("qwen-2.5-72b", "math500"),
+        ("claude-3.5-sonnet", "humaneval"),
+        ("gpt-4o", "mmlu_pro"),
+    }
 
     for m in BASELINE_MODELS:
         MODELS.append({
@@ -224,13 +253,16 @@ def seed_data():
         for ds_name, score in BASELINE_SCORES[m["model_id"]].items():
             ds_info = DATASETS[ds_name]
             run_id = f"{cp_id}__{ds_name}"
+            no_ci = (m["model_id"], ds_name) in _NO_CI_BASELINE
+            sample_n = None if no_ci else _DATASET_SAMPLES.get(ds_name, 30)
+            ci_lower, ci_upper, se, sc = _compute_ci(score, sample_n)
             EVAL_RUNS.append({
                 "eval_run_id": run_id,
                 "checkpoint_id": cp_id,
                 "dataset_name": ds_name,
                 "status": "completed",
                 "grader_type": _DATASET_GRADER.get(ds_name, "exact_match"),
-                "sample_count": _DATASET_SAMPLES.get(ds_name, 30),
+                "sample_count": sample_n,
                 "inference_config": {"temperature": 0.0},
                 "dataset_version": "1.0.0",
                 "dataset_split": "test",
@@ -240,6 +272,8 @@ def seed_data():
                 "checkpoint_id": cp_id, "dataset_name": ds_name,
                 "metric_name": ds_info["primary"], "metric_value": score,
                 "is_primary": True, "eval_config": {}, "eval_run_id": run_id,
+                "ci_lower": ci_lower, "ci_upper": ci_upper,
+                "stderr": se, "sample_count": sc,
                 "ingested_at": _now(),
             })
 
@@ -295,8 +329,17 @@ async def get_model(model_id: str):
 async def get_model_scores(model_id: str):
     cp_ids = {c["checkpoint_id"] for c in CHECKPOINTS if c["model_id"] == model_id}
     cp_step = {c["checkpoint_id"]: c["training_step"] for c in CHECKPOINTS if c["model_id"] == model_id}
-    results = [{**e, "training_step": cp_step.get(e["checkpoint_id"])}
-               for e in EVAL_RESULTS if e["checkpoint_id"] in cp_ids]
+    results = []
+    for e in EVAL_RESULTS:
+        if e["checkpoint_id"] in cp_ids:
+            results.append({
+                **e,
+                "training_step": cp_step.get(e["checkpoint_id"]),
+                "ci_lower": e.get("ci_lower"),
+                "ci_upper": e.get("ci_upper"),
+                "stderr": e.get("stderr"),
+                "sample_count": e.get("sample_count"),
+            })
     results.sort(key=lambda r: (r["training_step"] or float("inf"), r["dataset_name"], r["metric_name"]))
     return {"model_id": model_id, "scores": results}
 
@@ -338,8 +381,30 @@ async def get_leaderboard(dataset_name: str):
 async def compare_models(
     models: str = Query(..., description="Comma-separated model_ids"),
     dataset: str = Query(..., description="Single dataset name"),
+    common_only: bool = Query(False, description="Filter to datasets where ALL models have results"),
 ):
     model_ids = [m.strip() for m in models.split(",") if m.strip()]
+
+    # When common_only is True, restrict to datasets where every requested model has a
+    # primary eval result (among the checkpoints for that model).
+    if common_only:
+        def _model_datasets(mid: str) -> set[str]:
+            cp_ids = {c["checkpoint_id"] for c in CHECKPOINTS if c["model_id"] == mid}
+            return {e["dataset_name"] for e in EVAL_RESULTS if e["checkpoint_id"] in cp_ids and e["is_primary"]}
+
+        valid_model_ids = [mid for mid in model_ids if any(m["model_id"] == mid for m in MODELS)]
+        if valid_model_ids:
+            common_datasets: set[str] = _model_datasets(valid_model_ids[0])
+            for mid in valid_model_ids[1:]:
+                common_datasets &= _model_datasets(mid)
+        else:
+            common_datasets = set()
+        # Override the single-dataset filter: only proceed if dataset is in common set
+        if dataset not in common_datasets:
+            return {"dataset": dataset, "models": [], "common_only": True, "common_datasets": sorted(common_datasets)}
+    else:
+        common_datasets = None
+
     result: dict[str, dict] = {}
     for mid in model_ids:
         model = next((m for m in MODELS if m["model_id"] == mid), None)
@@ -360,7 +425,10 @@ async def compare_models(
             "model_id": mid, "display_name": model["display_name"],
             "model_type": model["model_type"], "data_points": data_points,
         }
-    return {"dataset": dataset, "models": list(result.values())}
+    resp = {"dataset": dataset, "models": list(result.values())}
+    if common_datasets is not None:
+        resp["common_datasets"] = sorted(common_datasets)
+    return resp
 
 
 @app.get("/api/heatmap")
@@ -406,7 +474,19 @@ async def get_heatmap():
         for ds, r in non_completed.items():
             cell[ds] = {"score": None, "status": r["status"], "eval_run_id": r["eval_run_id"]}
         matrix[mid] = cell
-    return {"models": models_out, "datasets": datasets, "matrix": matrix}
+    coverage = {}
+    for m in models_out:
+        mid = m["model_id"]
+        evaluated = sum(
+            1 for ds in datasets
+            if ds in matrix.get(mid, {}) and matrix[mid][ds].get("score") is not None
+        )
+        missing = [
+            ds for ds in datasets
+            if ds not in matrix.get(mid, {}) or matrix[mid][ds].get("score") is None
+        ]
+        coverage[mid] = {"evaluated": evaluated, "total": len(datasets), "missing": missing}
+    return {"models": models_out, "datasets": datasets, "matrix": matrix, "coverage": coverage}
 
 
 @app.get("/api/eval-runs/{eval_run_id}")
@@ -447,7 +527,12 @@ async def get_model_diagnosis(model_id: str):
             if e["checkpoint_id"] in bl_cps and e["is_primary"]:
                 ds = e["dataset_name"]
                 if ds not in baseline_map or e["metric_value"] > baseline_map[ds]["score"]:
-                    baseline_map[ds] = {"score": e["metric_value"], "model": m["display_name"]}
+                    baseline_map[ds] = {
+                        "score": e["metric_value"],
+                        "model": m["display_name"],
+                        "ci_lower": e.get("ci_lower"),
+                        "ci_upper": e.get("ci_upper"),
+                    }
 
     # Trend: last 5 checkpoints per dataset
     recent_by_ds = {}
@@ -458,6 +543,17 @@ async def get_model_diagnosis(model_id: str):
                 if ds not in recent_by_ds:
                     recent_by_ds[ds] = []
                 recent_by_ds[ds].append(e["metric_value"])
+
+    def compute_significance(m_ci_lo, m_ci_hi, b_ci_lo, b_ci_hi):
+        if m_ci_lo is None or b_ci_lo is None:
+            return "insufficient_data"
+        if m_ci_lo > b_ci_hi or b_ci_lo > m_ci_hi:
+            return "likely_real"
+        overlap = min(m_ci_hi, b_ci_hi) - max(m_ci_lo, b_ci_lo)
+        smaller = min(m_ci_hi - m_ci_lo, b_ci_hi - b_ci_lo)
+        if smaller > 0 and overlap / smaller > 0.5:
+            return "likely_noise"
+        return "uncertain"
 
     def compute_trend(values):
         if len(values) < 2:
@@ -480,13 +576,22 @@ async def get_model_diagnosis(model_id: str):
         bl = baseline_map.get(ds, {})
         val = e["metric_value"]
         bl_score = bl.get("score")
+        m_ci_lo = e.get("ci_lower")
+        m_ci_hi = e.get("ci_upper")
+        b_ci_lo = bl.get("ci_lower")
+        b_ci_hi = bl.get("ci_upper")
         scores[ds] = {
             "value": round(val, 4),
             "metric_name": e["metric_name"],
-            "baseline_best": round(bl_score, 4) if bl_score else None,
+            "baseline_best": round(bl_score, 4) if bl_score is not None else None,
             "baseline_model": bl.get("model"),
-            "gap": round(val - bl_score, 4) if bl_score else None,
+            "gap": round(val - bl_score, 4) if bl_score is not None else None,
             "trend": compute_trend(recent_by_ds.get(ds, [])),
+            "ci_lower": m_ci_lo,
+            "ci_upper": m_ci_hi,
+            "stderr": e.get("stderr"),
+            "sample_count": e.get("sample_count"),
+            "significance": compute_significance(m_ci_lo, m_ci_hi, b_ci_lo, b_ci_hi),
         }
 
     # best_overall_step: checkpoint with highest average primary metric across all datasets
