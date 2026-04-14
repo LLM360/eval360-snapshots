@@ -132,3 +132,29 @@ CREATE TABLE IF NOT EXISTS eval_suites (
 
 ALTER TABLE models ADD COLUMN IF NOT EXISTS param_count BIGINT;
 ALTER TABLE models ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;
+
+
+-- =========================================================================
+-- Phase 4: Example-level results
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS example_results (
+    id              SERIAL PRIMARY KEY,
+    eval_run_id     TEXT NOT NULL REFERENCES eval_runs(eval_run_id) ON DELETE CASCADE,
+    example_idx     INTEGER NOT NULL,
+    correct         BOOLEAN,
+    input_preview   TEXT,
+    output_preview  TEXT,
+    ground_truth    TEXT,
+    error_tag       TEXT,
+    difficulty      TEXT,
+    topic           TEXT,
+    subtask         TEXT,
+    metadata        JSONB DEFAULT '{}',
+    UNIQUE (eval_run_id, example_idx)
+);
+
+CREATE INDEX IF NOT EXISTS idx_examples_run ON example_results(eval_run_id);
+CREATE INDEX IF NOT EXISTS idx_examples_correct ON example_results(eval_run_id, correct);
+CREATE INDEX IF NOT EXISTS idx_examples_topic ON example_results(topic);
+CREATE INDEX IF NOT EXISTS idx_examples_difficulty ON example_results(difficulty);
