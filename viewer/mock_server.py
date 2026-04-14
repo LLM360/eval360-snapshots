@@ -30,6 +30,8 @@ MODELS: list[dict] = []
 CHECKPOINTS: list[dict] = []
 EVAL_RESULTS: list[dict] = []
 EVAL_RUNS: list[dict] = []
+BENCHMARK_METADATA: list[dict] = []
+EVAL_SUITES: list[dict] = []
 
 # Realistic model definitions
 TRAINING_MODELS = [
@@ -133,10 +135,14 @@ def seed_data():
     # We need a stable selection; pick after the loop by recording all combos first
     training_combos: list[tuple[str, str]] = []
 
+    _PARAM_COUNTS = {"k2-think-v2": 400_000_000_000, "k2-chat-70b": 70_000_000_000, "k2-base-400b": 400_000_000_000}
+
     for m in TRAINING_MODELS:
         MODELS.append({
             "model_id": m["model_id"], "display_name": m["display_name"],
             "model_type": "training", "owner": m["owner"], "created_at": _now(),
+            "param_count": _PARAM_COUNTS.get(m["model_id"]),
+            "is_pinned": False,
         })
         for step_idx in range(m["steps"]):
             step = (step_idx + 1) * 1000
@@ -243,6 +249,8 @@ def seed_data():
         MODELS.append({
             "model_id": m["model_id"], "display_name": m["display_name"],
             "model_type": "baseline", "owner": m["owner"], "created_at": _now(),
+            "param_count": None,
+            "is_pinned": False,
         })
         cp_id = f"{m['model_id']}__baseline"
         CHECKPOINTS.append({
@@ -276,6 +284,50 @@ def seed_data():
                 "stderr": se, "sample_count": sc,
                 "ingested_at": _now(),
             })
+
+    # Seed benchmark metadata
+    _CATEGORIES = {
+        "bbh": ("reasoning", "logic"),
+        "math500": ("reasoning", "math"),
+        "gsm8k": ("reasoning", "math"),
+        "humaneval": ("coding", "pass_at_k"),
+        "mbpp": ("coding", "pass_at_k"),
+        "ifeval": ("instruction_following", None),
+        "arc_challenge": ("knowledge", "science"),
+        "mmlu_pro": ("knowledge", "multi_domain"),
+    }
+
+    for ds_name, (cat, subcat) in _CATEGORIES.items():
+        BENCHMARK_METADATA.append({
+            "dataset_name": ds_name,
+            "category": cat,
+            "subcategory": subcat,
+            "primary_metric": DATASETS[ds_name]["primary"],
+            "description": None,
+        })
+
+    # Seed eval suites
+    EVAL_SUITES.append({
+        "suite_id": "core",
+        "display_name": "Core Research Suite",
+        "description": "Primary benchmarks for model evaluation",
+        "dataset_names": ["bbh", "math500", "humaneval", "gsm8k"],
+        "created_at": _now(),
+    })
+    EVAL_SUITES.append({
+        "suite_id": "coding",
+        "display_name": "Coding Suite",
+        "description": "Code generation benchmarks",
+        "dataset_names": ["humaneval", "mbpp"],
+        "created_at": _now(),
+    })
+    EVAL_SUITES.append({
+        "suite_id": "full",
+        "display_name": "Full Suite",
+        "description": "All benchmarks",
+        "dataset_names": list(DATASETS.keys()),
+        "created_at": _now(),
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -432,9 +484,17 @@ async def compare_models(
 
 
 @app.get("/api/heatmap")
-async def get_heatmap():
-    datasets = sorted({e["dataset_name"] for e in EVAL_RESULTS if e["is_primary"]}
-                      | {r["dataset_name"] for r in EVAL_RUNS})
+async def get_heatmap(suite_id: str | None = Query(None)):
+    all_datasets = sorted({e["dataset_name"] for e in EVAL_RESULTS if e["is_primary"]}
+                          | {r["dataset_name"] for r in EVAL_RUNS})
+    if suite_id is not None:
+        suite = next((s for s in EVAL_SUITES if s["suite_id"] == suite_id), None)
+        if suite is None:
+            return JSONResponse({"error": "Suite not found"}, status_code=404)
+        suite_ds = set(suite["dataset_names"])
+        datasets = [ds for ds in all_datasets if ds in suite_ds]
+    else:
+        datasets = all_datasets
     models_out = []
     matrix = {}
     seen = set()
@@ -448,6 +508,8 @@ async def get_heatmap():
         models_out.append({
             "model_id": mid, "display_name": m["display_name"],
             "model_type": m["model_type"], "owner": m["owner"],
+            "param_count": m.get("param_count"),
+            "is_pinned": m.get("is_pinned", False),
         })
         cp_ids = {c["checkpoint_id"] for c in CHECKPOINTS if c["model_id"] == mid}
         # best completed result per dataset: (score, eval_run_id)
@@ -486,7 +548,62 @@ async def get_heatmap():
             if ds not in matrix.get(mid, {}) or matrix[mid][ds].get("score") is None
         ]
         coverage[mid] = {"evaluated": evaluated, "total": len(datasets), "missing": missing}
-    return {"models": models_out, "datasets": datasets, "matrix": matrix, "coverage": coverage}
+    categories: dict[str, list[str]] = {}
+    for bm in BENCHMARK_METADATA:
+        cat = bm["category"]
+        if cat not in categories:
+            categories[cat] = []
+        if bm["dataset_name"] in datasets:
+            categories[cat].append(bm["dataset_name"])
+    return {"models": models_out, "datasets": datasets, "matrix": matrix, "coverage": coverage,
+            "categories": categories}
+
+
+@app.post("/api/admin/suites")
+async def create_suite(body: dict):
+    existing = next((s for s in EVAL_SUITES if s["suite_id"] == body["suite_id"]), None)
+    if existing:
+        existing.update(body)
+    else:
+        body.setdefault("created_at", _now())
+        EVAL_SUITES.append(body)
+    return {"ok": True, "suite_id": body["suite_id"]}
+
+
+@app.get("/api/suites")
+async def list_suites():
+    return {"suites": EVAL_SUITES}
+
+
+@app.get("/api/suites/{suite_id}/heatmap")
+async def get_suite_heatmap(suite_id: str):
+    suite = next((s for s in EVAL_SUITES if s["suite_id"] == suite_id), None)
+    if not suite:
+        return JSONResponse({"error": "Suite not found"}, status_code=404)
+    return await get_heatmap(suite_id=suite_id)
+
+
+@app.post("/api/admin/benchmark-metadata")
+async def update_benchmark_metadata(body: dict):
+    for bm in body.get("benchmarks", []):
+        existing = next((m for m in BENCHMARK_METADATA if m["dataset_name"] == bm["dataset_name"]), None)
+        if existing:
+            existing.update(bm)
+        else:
+            BENCHMARK_METADATA.append(bm)
+    return {"ok": True}
+
+
+@app.patch("/api/models/{model_id}")
+async def patch_model(model_id: str, body: dict):
+    model = next((m for m in MODELS if m["model_id"] == model_id), None)
+    if not model:
+        return JSONResponse({"error": "Model not found"}, status_code=404)
+    if "param_count" in body:
+        model["param_count"] = body["param_count"]
+    if "is_pinned" in body:
+        model["is_pinned"] = body["is_pinned"]
+    return {"ok": True, "model_id": model_id}
 
 
 @app.get("/api/eval-runs/{eval_run_id}")
