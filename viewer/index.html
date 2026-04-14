@@ -202,9 +202,6 @@ main {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  position: sticky;
-  top: 52px;
-  z-index: 10;
 }
 
 .heatmap tbody tr:last-child td { border-bottom: none; }
@@ -607,9 +604,6 @@ select option { background: var(--surface); }
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  position: sticky;
-  top: 52px;
-  z-index: 10;
 }
 
 .pivot .model-col {
@@ -652,6 +646,75 @@ select option { background: var(--surface); }
 .stagger-4 { animation-delay: 0.12s; }
 .stagger-5 { animation-delay: 0.15s; }
 .stagger-6 { animation-delay: 0.18s; }
+
+/* ===================================================================
+   EXAMPLE BROWSER (Phase 4)
+   =================================================================== */
+.example-browser {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.example-browser-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
+}
+
+.example-browser-header h3 { font-size: 16px; font-weight: 600; color: var(--text-bright); }
+
+.example-summary { font-size: 13px; color: var(--muted); }
+.example-summary strong { color: var(--text); font-family: var(--font-mono); }
+
+.example-filter-bar {
+  display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;
+}
+
+.filter-btn {
+  padding: 4px 12px; border-radius: var(--radius); font-size: 12px;
+  border: 1px solid var(--border); background: transparent; color: var(--muted);
+  cursor: pointer; transition: all 0.15s;
+}
+.filter-btn:hover { border-color: var(--border-2); color: var(--text); }
+.filter-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+.example-table { width: 100%; border-collapse: collapse; }
+.example-table th {
+  text-align: left; font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.4px; padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.example-table td { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.example-table tbody tr { cursor: pointer; transition: background 0.1s; }
+.example-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+.example-table .correct-cell { color: var(--green); }
+.example-table .incorrect-cell { color: var(--red); }
+.example-table .preview-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+
+.example-expand {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; margin: 4px 0 8px; font-size: 12px; line-height: 1.6;
+}
+.example-expand .ex-label { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
+.example-expand .ex-text { color: var(--text); font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; margin-bottom: 10px; }
+
+.slice-panel { margin-top: 16px; }
+.slice-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 12px; }
+.slice-bar-label { min-width: 100px; color: var(--muted); text-align: right; }
+.slice-bar-track { flex: 1; height: 18px; background: var(--bg); border-radius: 3px; overflow: hidden; display: flex; }
+.slice-bar-correct { background: var(--green); opacity: 0.7; height: 100%; }
+.slice-bar-incorrect { background: var(--red); opacity: 0.7; height: 100%; }
+.slice-bar-stats { min-width: 80px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+.example-pagination { display: flex; gap: 8px; margin-top: 12px; justify-content: center; }
+.page-btn { padding: 4px 12px; border-radius: var(--radius); border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
+.page-btn:hover { border-color: var(--border-2); color: var(--text); }
+.page-btn:disabled { opacity: 0.3; cursor: default; }
+
+.close-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: var(--radius); padding: 4px 12px; font-size: 12px; cursor: pointer; }
+.close-btn:hover { color: var(--text); border-color: var(--border-2); }
 </style>
 </head>
 <body>
@@ -849,7 +912,7 @@ function escHtml(s) {
 /* ===================================================================
    SCORE CELL RENDERING (state-aware)
    =================================================================== */
-function renderScoreCell(td, entry, bestVal) {
+function renderScoreCell(td, entry, bestVal, dsName) {
   td.className = 'score-cell';
   if (!entry) {
     // Not run
@@ -869,6 +932,12 @@ function renderScoreCell(td, entry, bestVal) {
       td.dataset.status = status;
       td.addEventListener('mouseenter', function() { showProvTooltip(this, entry.eval_run_id, status); });
       td.addEventListener('mouseleave', hideProvTooltip);
+      // Phase 4: clickable example drilldown
+      td.style.cursor = 'pointer';
+      td.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openExampleBrowser(entry.eval_run_id, dsName || '');
+      });
     }
   } else if (status === 'pending' || status === 'running') {
     td.textContent = '\u23f3';
@@ -907,6 +976,281 @@ async function api(path) {
   const r = await fetch(BASE_PATH + path);
   if (!r.ok) throw new Error('API error: ' + r.status);
   return r.json();
+}
+
+/* ===================================================================
+   EXAMPLE BROWSER (Phase 4)
+   =================================================================== */
+async function openExampleBrowser(evalRunId, datasetName) {
+  // Remove any existing browser
+  const existing = document.querySelector('.example-browser');
+  if (existing) existing.remove();
+
+  let currentOffset = 0;
+  const PAGE_SIZE = 50;
+  let currentFilter = null;       // null = all, true = correct, false = incorrect
+  let currentTopic = '';
+  let currentDifficulty = '';
+  let sliceData = null;
+  let exData = null;
+
+  const browser = el('div', {class: 'example-browser page-enter'});
+
+  // Header
+  const header = el('div', {class: 'example-browser-header'});
+  header.appendChild(el('h3', null, datasetName + ' \u2014 Examples'));
+  const closeBtn = el('button', {class: 'close-btn'}, '\u2715 Close');
+  closeBtn.addEventListener('click', () => browser.remove());
+  header.appendChild(closeBtn);
+  browser.appendChild(header);
+
+  // Summary placeholder
+  const summary = el('div', {class: 'example-summary'});
+  summary.textContent = 'Loading...';
+  browser.appendChild(summary);
+
+  // Filter bar
+  const filterBar = el('div', {class: 'example-filter-bar'});
+  const btnAll = el('button', {class: 'filter-btn active'}, 'All');
+  const btnCorrect = el('button', {class: 'filter-btn'}, 'Correct');
+  const btnIncorrect = el('button', {class: 'filter-btn'}, 'Incorrect');
+
+  function setFilterActive(btn) {
+    filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  btnAll.addEventListener('click', () => { currentFilter = null; currentOffset = 0; setFilterActive(btnAll); fetchAndRender(); });
+  btnCorrect.addEventListener('click', () => { currentFilter = true; currentOffset = 0; setFilterActive(btnCorrect); fetchAndRender(); });
+  btnIncorrect.addEventListener('click', () => { currentFilter = false; currentOffset = 0; setFilterActive(btnIncorrect); fetchAndRender(); });
+
+  filterBar.appendChild(btnAll);
+  filterBar.appendChild(btnCorrect);
+  filterBar.appendChild(btnIncorrect);
+
+  // Topic dropdown
+  const topicSelect = document.createElement('select');
+  topicSelect.appendChild(el('option', {value: ''}, 'All Topics'));
+  topicSelect.addEventListener('change', () => { currentTopic = topicSelect.value; currentOffset = 0; fetchAndRender(); });
+  filterBar.appendChild(topicSelect);
+
+  // Difficulty dropdown
+  const diffSelect = document.createElement('select');
+  diffSelect.appendChild(el('option', {value: ''}, 'All Difficulties'));
+  diffSelect.addEventListener('change', () => { currentDifficulty = diffSelect.value; currentOffset = 0; fetchAndRender(); });
+  filterBar.appendChild(diffSelect);
+
+  browser.appendChild(filterBar);
+
+  // Table container
+  const tableContainer = el('div');
+  browser.appendChild(tableContainer);
+
+  // Pagination
+  const pagination = el('div', {class: 'example-pagination'});
+  const prevBtn = el('button', {class: 'page-btn'}, 'Previous');
+  const nextBtn = el('button', {class: 'page-btn'}, 'Next');
+  prevBtn.addEventListener('click', () => { if (currentOffset >= PAGE_SIZE) { currentOffset -= PAGE_SIZE; fetchAndRender(); } });
+  nextBtn.addEventListener('click', () => { if (exData && currentOffset + PAGE_SIZE < exData.total) { currentOffset += PAGE_SIZE; fetchAndRender(); } });
+  pagination.appendChild(prevBtn);
+  pagination.appendChild(nextBtn);
+  browser.appendChild(pagination);
+
+  // Slice panel placeholder
+  const slicePanel = el('div', {class: 'slice-panel'});
+  browser.appendChild(slicePanel);
+
+  // Insert into DOM
+  document.getElementById('app').appendChild(browser);
+  browser.scrollIntoView({behavior: 'smooth', block: 'start'});
+
+  // Build query params
+  function buildQuery() {
+    let q = '/api/eval-runs/' + encodeURIComponent(evalRunId) + '/examples?limit=' + PAGE_SIZE + '&offset=' + currentOffset;
+    if (currentFilter === true) q += '&correct=true';
+    else if (currentFilter === false) q += '&correct=false';
+    if (currentTopic) q += '&topic=' + encodeURIComponent(currentTopic);
+    if (currentDifficulty) q += '&difficulty=' + encodeURIComponent(currentDifficulty);
+    return q;
+  }
+
+  // Render example table
+  function renderTable(examples) {
+    tableContainer.innerHTML = '';
+    if (!examples || examples.length === 0) {
+      tableContainer.appendChild(el('div', {class: 'empty-state'}, 'No examples found for current filters.'));
+      return;
+    }
+    const table = document.createElement('table');
+    table.className = 'example-table';
+
+    const thead = document.createElement('thead');
+    const hrow = document.createElement('tr');
+    ['#', 'Input', 'Output', 'Expected', 'Result', 'Topic', 'Difficulty'].forEach(c => hrow.appendChild(el('th', null, c)));
+    thead.appendChild(hrow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const ex of examples) {
+      const tr = document.createElement('tr');
+
+      tr.appendChild(el('td', null, String(ex.example_idx)));
+      tr.appendChild(el('td', {class: 'preview-cell'}, ex.input_preview || '\u2014'));
+      tr.appendChild(el('td', {class: 'preview-cell'}, ex.output_preview || '\u2014'));
+      tr.appendChild(el('td', {class: 'preview-cell'}, ex.ground_truth || '\u2014'));
+
+      const resultTd = el('td', {class: ex.correct ? 'correct-cell' : 'incorrect-cell'});
+      resultTd.textContent = ex.correct ? '\u2713' : '\u2717';
+      tr.appendChild(resultTd);
+
+      tr.appendChild(el('td', {style: 'color:var(--muted);font-size:12px'}, ex.topic || '\u2014'));
+      tr.appendChild(el('td', {style: 'color:var(--muted);font-size:12px'}, ex.difficulty || '\u2014'));
+
+      // Expand on click
+      let expandRow = null;
+      tr.addEventListener('click', () => {
+        if (expandRow) {
+          expandRow.remove();
+          expandRow = null;
+          return;
+        }
+        expandRow = document.createElement('tr');
+        const expandTd = document.createElement('td');
+        expandTd.colSpan = 7;
+        const expandDiv = el('div', {class: 'example-expand'});
+
+        if (ex.input_preview) {
+          expandDiv.appendChild(el('div', {class: 'ex-label'}, 'Input'));
+          expandDiv.appendChild(el('div', {class: 'ex-text'}, ex.input_preview));
+        }
+        if (ex.output_preview) {
+          expandDiv.appendChild(el('div', {class: 'ex-label'}, 'Output'));
+          expandDiv.appendChild(el('div', {class: 'ex-text'}, ex.output_preview));
+        }
+        if (ex.ground_truth) {
+          expandDiv.appendChild(el('div', {class: 'ex-label'}, 'Ground Truth'));
+          expandDiv.appendChild(el('div', {class: 'ex-text'}, ex.ground_truth));
+        }
+        if (ex.error_tag) {
+          expandDiv.appendChild(el('div', {class: 'ex-label'}, 'Error Tag'));
+          expandDiv.appendChild(el('div', {class: 'ex-text'}, ex.error_tag));
+        }
+        if (ex.metadata && Object.keys(ex.metadata).length > 0) {
+          expandDiv.appendChild(el('div', {class: 'ex-label'}, 'Metadata'));
+          expandDiv.appendChild(el('div', {class: 'ex-text'}, JSON.stringify(ex.metadata, null, 2)));
+        }
+
+        expandTd.appendChild(expandDiv);
+        expandRow.appendChild(expandTd);
+        tr.after(expandRow);
+      });
+
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    tableContainer.appendChild(table);
+  }
+
+  // Render slice bars
+  function renderSlices(data) {
+    slicePanel.innerHTML = '';
+    if (!data) return;
+
+    if (data.error_concentration) {
+      const concDiv = el('div', {style: 'font-size:12px;color:var(--muted);margin-bottom:12px;font-style:italic'});
+      concDiv.textContent = data.error_concentration;
+      slicePanel.appendChild(concDiv);
+    }
+
+    function renderBarGroup(title, slices) {
+      if (!slices || Object.keys(slices).length === 0) return;
+      slicePanel.appendChild(el('div', {style: 'font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px;margin-top:12px'}, title));
+      const sorted = Object.entries(slices).sort((a, b) => a[0].localeCompare(b[0]));
+      for (const [name, info] of sorted) {
+        const row = el('div', {class: 'slice-bar-row'});
+        row.appendChild(el('div', {class: 'slice-bar-label'}, name));
+        const track = el('div', {class: 'slice-bar-track'});
+        const correctPct = info.total > 0 ? (info.correct / info.total) * 100 : 0;
+        const incorrectPct = 100 - correctPct;
+        const correctBar = el('div', {class: 'slice-bar-correct'});
+        correctBar.style.width = correctPct + '%';
+        const incorrectBar = el('div', {class: 'slice-bar-incorrect'});
+        incorrectBar.style.width = incorrectPct + '%';
+        track.appendChild(correctBar);
+        track.appendChild(incorrectBar);
+        row.appendChild(track);
+        row.appendChild(el('div', {class: 'slice-bar-stats'}, info.correct + '/' + info.total + ' (' + (info.accuracy * 100).toFixed(1) + '%)'));
+        slicePanel.appendChild(row);
+      }
+    }
+
+    renderBarGroup('By Topic', data.by_topic);
+    renderBarGroup('By Difficulty', data.by_difficulty);
+  }
+
+  // Populate dropdowns from slice data
+  function populateDropdowns(data) {
+    if (!data) return;
+    if (data.by_topic) {
+      for (const t of Object.keys(data.by_topic).sort()) {
+        topicSelect.appendChild(el('option', {value: t}, t));
+      }
+    }
+    if (data.by_difficulty) {
+      for (const d of Object.keys(data.by_difficulty).sort()) {
+        diffSelect.appendChild(el('option', {value: d}, d));
+      }
+    }
+  }
+
+  // Fetch and render
+  async function fetchAndRender() {
+    try {
+      exData = await api(buildQuery());
+      summary.textContent = '';
+      summary.appendChild(el('strong', null, String(exData.total)));
+      summary.appendChild(document.createTextNode(' examples \u2014 '));
+      summary.appendChild(el('strong', null, String(exData.correct_count)));
+      summary.appendChild(document.createTextNode(' correct \u2014 '));
+      summary.appendChild(el('strong', null, (exData.accuracy * 100).toFixed(1) + '%'));
+      summary.appendChild(document.createTextNode(' accuracy'));
+
+      renderTable(exData.examples);
+
+      // Update pagination
+      prevBtn.disabled = currentOffset === 0;
+      nextBtn.disabled = currentOffset + PAGE_SIZE >= exData.total;
+    } catch (e) {
+      summary.textContent = 'Error loading examples: ' + e.message;
+    }
+  }
+
+  // Initial load: fetch examples + slices in parallel
+  try {
+    const [ex, sl] = await Promise.all([
+      api(buildQuery()),
+      api('/api/eval-runs/' + encodeURIComponent(evalRunId) + '/slices'),
+    ]);
+    exData = ex;
+    sliceData = sl;
+
+    summary.textContent = '';
+    summary.appendChild(el('strong', null, String(exData.total)));
+    summary.appendChild(document.createTextNode(' examples \u2014 '));
+    summary.appendChild(el('strong', null, String(exData.correct_count)));
+    summary.appendChild(document.createTextNode(' correct \u2014 '));
+    summary.appendChild(el('strong', null, (exData.accuracy * 100).toFixed(1) + '%'));
+    summary.appendChild(document.createTextNode(' accuracy'));
+
+    renderTable(exData.examples);
+    prevBtn.disabled = currentOffset === 0;
+    nextBtn.disabled = currentOffset + PAGE_SIZE >= exData.total;
+
+    populateDropdowns(sliceData);
+    renderSlices(sliceData);
+  } catch (e) {
+    summary.textContent = 'Error loading examples: ' + e.message;
+  }
 }
 
 /* ===================================================================
@@ -1091,7 +1435,7 @@ async function viewObservatory(app) {
       for (const ds of orderedDatasets) {
         const td = document.createElement('td');
         const entry = scores[ds] || null;
-        renderScoreCell(td, entry, bestPerDs[ds]);
+        renderScoreCell(td, entry, bestPerDs[ds], ds);
         tr.appendChild(td);
       }
 
@@ -1169,6 +1513,13 @@ async function viewModels(app) {
       if (status === 'completed' && v != null) {
         valSpan = el('span', {class:'ds-val'}, v.toFixed(2));
         valSpan.style.color = scoreColor(v);
+        if (entry.eval_run_id) {
+          chip.style.cursor = 'pointer';
+          chip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openExampleBrowser(entry.eval_run_id, ds);
+          });
+        }
       } else if (status === 'pending' || status === 'running') {
         valSpan = el('span', {class:'ds-val'}, '\u23f3');
         valSpan.style.color = 'var(--accent)';
@@ -2008,7 +2359,7 @@ async function viewLeaderboard(app) {
       for (const ds of orderedDatasets) {
         const td = document.createElement('td');
         const entry = scores[ds] || null;
-        renderScoreCell(td, entry, bestPerDs[ds]);
+        renderScoreCell(td, entry, bestPerDs[ds], ds);
         tr.appendChild(td);
       }
 
