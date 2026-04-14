@@ -33,6 +33,10 @@ EVAL_RUNS: list[dict] = []
 BENCHMARK_METADATA: list[dict] = []
 EVAL_SUITES: list[dict] = []
 EXAMPLE_RESULTS: list[dict] = []
+ALERTS: list[dict] = []
+ACTIVITY_LOG: list[dict] = []
+PROMOTION_RULES: list[dict] = []
+WEBHOOKS: list[dict] = []
 
 # Realistic model definitions
 TRAINING_MODELS = [
@@ -75,10 +79,13 @@ def _now() -> str:
 
 
 def _training_score(base: float, ceiling: float, step: int, total_steps: int) -> float:
-    """Generate a plausible training curve score."""
+    """Generate a plausible training curve score with occasional dips."""
     frac = step / max(total_steps, 1)
     expected = base + (ceiling - base) * (1 - math.exp(-3 * frac))
     noise = random.gauss(0, 0.015)
+    # Introduce deliberate regression dips at ~60% training for some datasets
+    if 0.55 < frac < 0.65 and random.random() < 0.3:
+        noise -= 0.06  # noticeable dip
     return max(0.0, min(1.0, round(expected + noise, 4)))
 
 
@@ -340,6 +347,111 @@ def seed_data():
         "display_name": "Full Suite",
         "description": "All benchmarks",
         "dataset_names": list(DATASETS.keys()),
+        "created_at": _now(),
+    })
+
+    # Seed Phase 5: alerts, activity, promotion rules
+    _alert_id = 0
+    _activity_id = 0
+
+    # Generate alerts by comparing adjacent steps for training models
+    for m in TRAINING_MODELS:
+        for step_idx in range(1, m["steps"]):
+            step = (step_idx + 1) * 1000
+            prev_step = step_idx * 1000
+            cp_id = f"{m['model_id']}__step-{step}"
+            prev_cp_id = f"{m['model_id']}__step-{prev_step}"
+            for ds_name in DATASETS:
+                cur = next((e for e in EVAL_RESULTS if e["checkpoint_id"] == cp_id and e["dataset_name"] == ds_name and e["is_primary"]), None)
+                prev = next((e for e in EVAL_RESULTS if e["checkpoint_id"] == prev_cp_id and e["dataset_name"] == ds_name and e["is_primary"]), None)
+                if not cur or not prev:
+                    continue
+                delta = round(cur["metric_value"] - prev["metric_value"], 4)
+                if abs(delta) < 0.01:
+                    continue
+                # Simplified significance for mock
+                if cur.get("ci_lower") and prev.get("ci_upper") and cur["ci_lower"] > prev["ci_upper"]:
+                    sig = "likely_real"
+                elif prev.get("ci_lower") and cur.get("ci_upper") and prev["ci_lower"] > cur["ci_upper"]:
+                    sig = "likely_real"
+                else:
+                    sig = "uncertain"
+                if delta < -0.02 and sig == "likely_real":
+                    _alert_id += 1
+                    ALERTS.append({
+                        "id": _alert_id, "alert_type": "regression",
+                        "model_id": m["model_id"], "checkpoint_id": cp_id,
+                        "dataset_name": ds_name, "severity": "critical",
+                        "message": f"{m['display_name']} regressed on {ds_name}: {prev['metric_value']:.4f} → {cur['metric_value']:.4f} ({delta:+.4f})",
+                        "detail": {"prev_score": prev["metric_value"], "new_score": cur["metric_value"], "delta": delta, "significance": sig},
+                        "acknowledged": random.random() < 0.6,
+                        "created_at": _now(),
+                    })
+                elif delta < -0.02:
+                    _alert_id += 1
+                    ALERTS.append({
+                        "id": _alert_id, "alert_type": "regression",
+                        "model_id": m["model_id"], "checkpoint_id": cp_id,
+                        "dataset_name": ds_name, "severity": "warning",
+                        "message": f"{m['display_name']} may have regressed on {ds_name}: ({delta:+.4f})",
+                        "detail": {"prev_score": prev["metric_value"], "new_score": cur["metric_value"], "delta": delta, "significance": sig},
+                        "acknowledged": random.random() < 0.7,
+                        "created_at": _now(),
+                    })
+                elif delta > 0.03 and sig == "likely_real":
+                    _alert_id += 1
+                    ALERTS.append({
+                        "id": _alert_id, "alert_type": "improvement",
+                        "model_id": m["model_id"], "checkpoint_id": cp_id,
+                        "dataset_name": ds_name, "severity": "info",
+                        "message": f"{m['display_name']} improved on {ds_name}: ({delta:+.4f})",
+                        "detail": {"prev_score": prev["metric_value"], "new_score": cur["metric_value"], "delta": delta, "significance": sig},
+                        "acknowledged": False,
+                        "created_at": _now(),
+                    })
+
+    # Seed activity log from alerts + general eval completions
+    for alert in ALERTS:
+        _activity_id += 1
+        ACTIVITY_LOG.append({
+            "id": _activity_id, "event_type": alert["alert_type"],
+            "model_id": alert["model_id"], "checkpoint_id": alert["checkpoint_id"],
+            "dataset_name": alert["dataset_name"],
+            "summary": alert["message"], "detail": alert["detail"],
+            "created_at": alert["created_at"],
+        })
+    # Add some generic eval_completed events
+    for m in TRAINING_MODELS:
+        latest_step = m["steps"] * 1000
+        cp_id = f"{m['model_id']}__step-{latest_step}"
+        for ds_name in list(DATASETS.keys())[:3]:
+            cur = next((e for e in EVAL_RESULTS if e["checkpoint_id"] == cp_id and e["dataset_name"] == ds_name and e["is_primary"]), None)
+            if cur:
+                _activity_id += 1
+                ACTIVITY_LOG.append({
+                    "id": _activity_id, "event_type": "eval_completed",
+                    "model_id": m["model_id"], "checkpoint_id": cp_id,
+                    "dataset_name": ds_name,
+                    "summary": f"{m['display_name']} / {ds_name}: {cur['metric_value']:.4f}",
+                    "detail": {"new_score": cur["metric_value"]},
+                    "created_at": _now(),
+                })
+
+    # Seed promotion rules
+    PROMOTION_RULES.append({
+        "id": 1, "rule_name": "core-quality-gate",
+        "model_id": None, "suite_id": "core",
+        "min_scores": {"bbh": 0.65, "math500": 0.50, "humaneval": 0.60, "gsm8k": 0.70},
+        "no_regressions": True,
+        "description": "Core suite: min scores on all 4 benchmarks, no critical regressions",
+        "created_at": _now(),
+    })
+    PROMOTION_RULES.append({
+        "id": 2, "rule_name": "k2-think-v2-release",
+        "model_id": "k2-think-v2", "suite_id": "full",
+        "min_scores": {"bbh": 0.75, "math500": 0.60},
+        "no_regressions": True,
+        "description": "K2-Think-V2 release gate: high bar on reasoning + math",
         "created_at": _now(),
     })
 
@@ -930,6 +1042,160 @@ async def get_slices(eval_run_id: str):
             "error_concentration": concentration}
 
 
+# ---------------------------------------------------------------------------
+# Phase 5: Alerts, Activity, Diff, Promotion, Webhooks
+# ---------------------------------------------------------------------------
+
+@app.get("/api/alerts")
+async def list_alerts(
+    model_id: str | None = Query(None),
+    alert_type: str | None = Query(None),
+    severity: str | None = Query(None),
+    acknowledged: bool | None = Query(None),
+    limit: int = Query(50),
+    offset: int = Query(0),
+):
+    filtered = ALERTS
+    if model_id:
+        filtered = [a for a in filtered if a["model_id"] == model_id]
+    if alert_type:
+        filtered = [a for a in filtered if a["alert_type"] == alert_type]
+    if severity:
+        filtered = [a for a in filtered if a["severity"] == severity]
+    if acknowledged is not None:
+        filtered = [a for a in filtered if a["acknowledged"] == acknowledged]
+    return {"alerts": filtered[offset:offset + limit]}
+
+
+@app.post("/api/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert(alert_id: int):
+    alert = next((a for a in ALERTS if a["id"] == alert_id), None)
+    if not alert:
+        return JSONResponse({"error": "Alert not found"}, status_code=404)
+    alert["acknowledged"] = True
+    return {"ok": True, "alert_id": alert_id}
+
+
+@app.get("/api/activity")
+async def get_activity(
+    model_id: str | None = Query(None),
+    limit: int = Query(50),
+    offset: int = Query(0),
+):
+    filtered = ACTIVITY_LOG
+    if model_id:
+        filtered = [a for a in filtered if a.get("model_id") == model_id]
+    # Reverse for newest first
+    filtered = list(reversed(filtered))
+    return {"events": filtered[offset:offset + limit]}
+
+
+@app.get("/api/diff")
+async def diff_checkpoints(
+    checkpoint_a: str = Query(...),
+    checkpoint_b: str = Query(...),
+):
+    map_a = {e["dataset_name"]: e for e in EVAL_RESULTS if e["checkpoint_id"] == checkpoint_a and e["is_primary"]}
+    map_b = {e["dataset_name"]: e for e in EVAL_RESULTS if e["checkpoint_id"] == checkpoint_b and e["is_primary"]}
+    all_ds = sorted(set(map_a.keys()) | set(map_b.keys()))
+    diffs = []
+    for ds in all_ds:
+        a, b = map_a.get(ds), map_b.get(ds)
+        sa = round(a["metric_value"], 4) if a else None
+        sb = round(b["metric_value"], 4) if b else None
+        delta = round(sa - sb, 4) if sa is not None and sb is not None else None
+        diffs.append({"dataset_name": ds, "score_a": sa, "score_b": sb, "delta": delta, "significance": "uncertain"})
+    cp_a = next((c for c in CHECKPOINTS if c["checkpoint_id"] == checkpoint_a), {"checkpoint_id": checkpoint_a})
+    cp_b = next((c for c in CHECKPOINTS if c["checkpoint_id"] == checkpoint_b), {"checkpoint_id": checkpoint_b})
+    return {
+        "checkpoint_a": cp_a, "checkpoint_b": cp_b, "datasets": diffs,
+        "summary": {
+            "total": len(diffs),
+            "improved": sum(1 for d in diffs if d["delta"] and d["delta"] > 0),
+            "regressed": sum(1 for d in diffs if d["delta"] and d["delta"] < 0),
+            "unchanged": sum(1 for d in diffs if d["delta"] is not None and d["delta"] == 0),
+            "missing": sum(1 for d in diffs if d["delta"] is None),
+        },
+    }
+
+
+@app.get("/api/models/{model_id}/promotion-status")
+async def get_promotion_status(model_id: str):
+    cps = sorted(
+        [c for c in CHECKPOINTS if c["model_id"] == model_id and c["training_step"] is not None],
+        key=lambda c: c["training_step"],
+    )
+    if not cps:
+        return {"model_id": model_id, "overall": "no_data", "rules": []}
+    latest = cps[-1]
+    rules = [r for r in PROMOTION_RULES if r["model_id"] is None or r["model_id"] == model_id]
+    if not rules:
+        return {"model_id": model_id, "checkpoint_id": latest["checkpoint_id"], "overall": "no_rules", "rules": []}
+
+    score_map = {e["dataset_name"]: e["metric_value"] for e in EVAL_RESULTS
+                 if e["checkpoint_id"] == latest["checkpoint_id"] and e["is_primary"]}
+    regression_ds = {a["dataset_name"] for a in ALERTS
+                     if a["checkpoint_id"] == latest["checkpoint_id"] and a["alert_type"] == "regression"
+                     and a["severity"] == "critical" and not a["acknowledged"]}
+
+    rule_results = []
+    for rule in rules:
+        failures = []
+        for ds, min_val in (rule.get("min_scores") or {}).items():
+            actual = score_map.get(ds)
+            if actual is None:
+                failures.append(f"{ds}: no score (need ≥{min_val})")
+            elif actual < min_val:
+                failures.append(f"{ds}: {actual:.4f} < {min_val}")
+        if rule.get("no_regressions") and regression_ds:
+            failures.append(f"Critical regressions on: {', '.join(sorted(regression_ds))}")
+        if rule.get("suite_id"):
+            suite = next((s for s in EVAL_SUITES if s["suite_id"] == rule["suite_id"]), None)
+            if suite:
+                for ds in suite["dataset_names"]:
+                    if ds not in score_map:
+                        failures.append(f"Missing eval: {ds}")
+        rule_results.append({
+            "rule_name": rule["rule_name"], "passed": len(failures) == 0,
+            "failures": failures, "description": rule.get("description"),
+        })
+    overall = "ready" if all(r["passed"] for r in rule_results) else "blocked"
+    return {
+        "model_id": model_id, "checkpoint_id": latest["checkpoint_id"],
+        "training_step": latest["training_step"], "overall": overall, "rules": rule_results,
+    }
+
+
+@app.post("/api/admin/promotion-rules")
+async def create_promotion_rule(body: dict):
+    existing = next((r for r in PROMOTION_RULES if r["rule_name"] == body["rule_name"]), None)
+    if existing:
+        existing.update(body)
+    else:
+        body["id"] = max((r["id"] for r in PROMOTION_RULES), default=0) + 1
+        body.setdefault("created_at", _now())
+        PROMOTION_RULES.append(body)
+    return {"ok": True, "rule_name": body["rule_name"]}
+
+
+@app.get("/api/admin/promotion-rules")
+async def list_promotion_rules(model_id: str | None = Query(None)):
+    if model_id:
+        rules = [r for r in PROMOTION_RULES if r["model_id"] is None or r["model_id"] == model_id]
+    else:
+        rules = PROMOTION_RULES
+    return {"rules": rules}
+
+
+@app.post("/api/admin/webhooks")
+async def create_webhook(body: dict):
+    body["id"] = max((w["id"] for w in WEBHOOKS), default=0) + 1
+    body.setdefault("active", True)
+    body.setdefault("created_at", _now())
+    WEBHOOKS.append(body)
+    return {"ok": True, "id": body["id"]}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Eval360 Dashboard Viewer (Mock)")
     parser.add_argument("--host", default="0.0.0.0")
@@ -939,8 +1205,9 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     seed_data()
     logger.info(
-        "Seeded %d models, %d checkpoints, %d eval results, %d eval runs, %d example results",
-        len(MODELS), len(CHECKPOINTS), len(EVAL_RESULTS), len(EVAL_RUNS), len(EXAMPLE_RESULTS),
+        "Seeded %d models, %d checkpoints, %d eval results, %d eval runs, %d examples, %d alerts, %d activity events",
+        len(MODELS), len(CHECKPOINTS), len(EVAL_RESULTS), len(EVAL_RUNS),
+        len(EXAMPLE_RESULTS), len(ALERTS), len(ACTIVITY_LOG),
     )
     uvicorn.run(app, host=args.host, port=args.port)
 
