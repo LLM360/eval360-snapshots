@@ -32,6 +32,7 @@ EVAL_RESULTS: list[dict] = []
 EVAL_RUNS: list[dict] = []
 BENCHMARK_METADATA: list[dict] = []
 EVAL_SUITES: list[dict] = []
+EXAMPLE_RESULTS: list[dict] = []
 
 # Realistic model definitions
 TRAINING_MODELS = [
@@ -105,6 +106,19 @@ _DATASET_SAMPLES = {
     "mmlu_pro": 1000,
     "mbpp": 378,
 }
+
+
+_TOPICS = {
+    "bbh": ["logic", "tracking", "disambiguation", "boolean", "date"],
+    "math500": ["algebra", "geometry", "number_theory", "combinatorics", "calculus"],
+    "humaneval": ["string", "list", "math", "recursion", "sorting"],
+    "gsm8k": ["arithmetic", "fractions", "word_problem", "multi_step", "percentages"],
+    "ifeval": ["format", "length", "language", "keywords", "structure"],
+    "arc_challenge": ["physics", "biology", "chemistry", "earth_science", "general"],
+    "mmlu_pro": ["stem", "humanities", "social_science", "other"],
+    "mbpp": ["string", "list", "math", "file_io", "sorting"],
+}
+_DIFFICULTIES = ["easy", "medium", "hard"]
 
 
 def _compute_ci(primary_val: float, sample_n: int | None) -> tuple:
@@ -328,6 +342,47 @@ def seed_data():
         "dataset_names": list(DATASETS.keys()),
         "created_at": _now(),
     })
+
+    # Seed example results for each training model's latest checkpoint only
+    for m in TRAINING_MODELS:
+        total_steps = m["steps"]
+        latest_step = total_steps * 1000
+        cp_id = f"{m['model_id']}__step-{latest_step}"
+        for ds_name, ds_info in DATASETS.items():
+            eval_run_id = f"{cp_id}__{ds_name}"
+            # Skip pending/failed runs
+            if eval_run_id not in {r["eval_run_id"] for r in EVAL_RUNS if r["status"] == "completed"}:
+                continue
+            # Retrieve the score for this run from EVAL_RESULTS
+            score_entry = next(
+                (e for e in EVAL_RESULTS if e["eval_run_id"] == eval_run_id and e.get("is_primary")),
+                None,
+            )
+            if score_entry is None:
+                continue
+            score = score_entry["metric_value"]
+            sample_count = _DATASET_SAMPLES.get(ds_name, 30)
+            n_examples = min(sample_count, 50)
+            topics = _TOPICS.get(ds_name, ["general"])
+            for i in range(n_examples):
+                topic = random.choice(topics)
+                difficulty = random.choice(_DIFFICULTIES)
+                correct = random.random() < score
+                EXAMPLE_RESULTS.append({
+                    "eval_run_id": eval_run_id,
+                    "example_idx": i,
+                    "correct": correct,
+                    "input_preview": f"[{topic}] Example {i}: Solve this {difficulty} {topic} problem...",
+                    "output_preview": "The answer is..." if correct else "I think the answer might be...",
+                    "ground_truth": f"Expected answer for example {i}",
+                    "error_tag": None if correct else random.choice(
+                        ["wrong_method", "arithmetic_error", "misunderstanding", "timeout"]
+                    ),
+                    "topic": topic,
+                    "difficulty": difficulty,
+                    "subtask": None,
+                    "metadata": {},
+                })
 
 
 # ---------------------------------------------------------------------------
@@ -792,6 +847,89 @@ async def delete_checkpoint(checkpoint_id: str):
     return {"ok": True, "deleted": checkpoint_id}
 
 
+@app.post("/api/ingest/examples")
+async def ingest_examples(body: dict):
+    for ex in body.get("examples", []):
+        ex["eval_run_id"] = body["eval_run_id"]
+        existing = next(
+            (e for e in EXAMPLE_RESULTS
+             if e["eval_run_id"] == ex["eval_run_id"] and e["example_idx"] == ex["example_idx"]),
+            None,
+        )
+        if existing:
+            existing.update(ex)
+        else:
+            EXAMPLE_RESULTS.append(ex)
+    return {"ok": True, "eval_run_id": body["eval_run_id"], "count": len(body.get("examples", []))}
+
+
+@app.get("/api/eval-runs/{eval_run_id}/examples")
+async def get_examples(
+    eval_run_id: str,
+    correct: bool | None = Query(None),
+    topic: str | None = Query(None),
+    difficulty: str | None = Query(None),
+    limit: int = Query(50),
+    offset: int = Query(0),
+):
+    filtered = [e for e in EXAMPLE_RESULTS if e["eval_run_id"] == eval_run_id]
+    if correct is not None:
+        filtered = [e for e in filtered if e.get("correct") == correct]
+    if topic:
+        filtered = [e for e in filtered if e.get("topic") == topic]
+    if difficulty:
+        filtered = [e for e in filtered if e.get("difficulty") == difficulty]
+    total = len(filtered)
+    correct_count = sum(1 for e in filtered if e.get("correct"))
+    accuracy = round(correct_count / total, 4) if total > 0 else 0
+    page = filtered[offset:offset + limit]
+    return {"eval_run_id": eval_run_id, "total": total, "correct_count": correct_count,
+            "accuracy": accuracy, "examples": page}
+
+
+@app.get("/api/eval-runs/{eval_run_id}/slices")
+async def get_slices(eval_run_id: str):
+    examples = [e for e in EXAMPLE_RESULTS if e["eval_run_id"] == eval_run_id]
+
+    by_topic: dict[str, dict] = {}
+    for e in examples:
+        t = e.get("topic") or "unknown"
+        if t not in by_topic:
+            by_topic[t] = {"total": 0, "correct": 0}
+        by_topic[t]["total"] += 1
+        if e.get("correct"):
+            by_topic[t]["correct"] += 1
+    for v in by_topic.values():
+        v["accuracy"] = round(v["correct"] / v["total"], 4) if v["total"] > 0 else 0
+
+    by_difficulty: dict[str, dict] = {}
+    for e in examples:
+        d = e.get("difficulty") or "unknown"
+        if d not in by_difficulty:
+            by_difficulty[d] = {"total": 0, "correct": 0}
+        by_difficulty[d]["total"] += 1
+        if e.get("correct"):
+            by_difficulty[d]["correct"] += 1
+    for v in by_difficulty.values():
+        v["accuracy"] = round(v["correct"] / v["total"], 4) if v["total"] > 0 else 0
+
+    # Error concentration
+    worst = sorted(
+        [(k, v) for k, v in by_topic.items() if v["total"] >= 3],
+        key=lambda x: x[1]["accuracy"],
+    )[:3]
+    parts = [
+        f"{k} ({v['total'] - v['correct']}/{v['total']} failures)"
+        for k, v in worst if v["accuracy"] < 0.9
+    ]
+    concentration = (
+        "Failures concentrated in: " + ", ".join(parts) if parts else "No significant failure concentration"
+    )
+
+    return {"eval_run_id": eval_run_id, "by_topic": by_topic, "by_difficulty": by_difficulty,
+            "error_concentration": concentration}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Eval360 Dashboard Viewer (Mock)")
     parser.add_argument("--host", default="0.0.0.0")
@@ -800,8 +938,10 @@ def main():
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     seed_data()
-    logger.info("Seeded %d models, %d checkpoints, %d eval results, %d eval runs",
-                len(MODELS), len(CHECKPOINTS), len(EVAL_RESULTS), len(EVAL_RUNS))
+    logger.info(
+        "Seeded %d models, %d checkpoints, %d eval results, %d eval runs, %d example results",
+        len(MODELS), len(CHECKPOINTS), len(EVAL_RESULTS), len(EVAL_RUNS), len(EXAMPLE_RESULTS),
+    )
     uvicorn.run(app, host=args.host, port=args.port)
 
 
