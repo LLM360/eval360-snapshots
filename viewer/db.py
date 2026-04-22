@@ -17,7 +17,7 @@ async def init_pool() -> asyncpg.Pool:
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
         raise RuntimeError("DATABASE_URL environment variable is required")
-    _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10)
+    _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10, ssl="require")
     logger.info("Postgres pool created (%s)", dsn.split("@")[-1])
     return _pool
 
