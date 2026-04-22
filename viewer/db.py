@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from typing import Any
+from urllib.parse import quote_plus
 
 import asyncpg
 
@@ -12,11 +13,33 @@ logger = logging.getLogger(__name__)
 _pool: asyncpg.Pool | None = None
 
 
+def _build_dsn_from_secrets_manager() -> str:
+    """Build a Postgres DSN by fetching credentials from AWS Secrets Manager."""
+    import boto3
+
+    secret_name = os.environ.get(
+        "RDS_SECRET_NAME",
+        "rds!db-f2e6ca93-cd91-4423-aba3-6cc1d984d69f",
+    )
+    rds_host = os.environ.get(
+        "RDS_HOST",
+        "rl-infra.cqpcm6sq0wod.us-east-1.rds.amazonaws.com",
+    )
+    rds_port = os.environ.get("RDS_PORT", "5432")
+    rds_dbname = os.environ.get("RDS_DBNAME", "eval360")
+
+    client = boto3.client("secretsmanager", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+    secret = json.loads(client.get_secret_value(SecretId=secret_name)["SecretString"])
+    username = secret["username"]
+    password = secret["password"]
+    return f"postgresql://{quote_plus(username)}:{quote_plus(password)}@{rds_host}:{rds_port}/{rds_dbname}"
+
+
 async def init_pool() -> asyncpg.Pool:
     global _pool
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
-        raise RuntimeError("DATABASE_URL environment variable is required")
+        dsn = _build_dsn_from_secrets_manager()
     _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10, ssl="require")
     logger.info("Postgres pool created (%s)", dsn.split("@")[-1])
     return _pool
