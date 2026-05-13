@@ -1,8 +1,10 @@
 """Postgres connection pool and query helpers for the Eval360 dashboard."""
 
+import asyncio
 import json
 import logging
 import os
+import time
 from typing import Any
 from urllib.parse import quote_plus
 
@@ -11,6 +13,14 @@ import asyncpg
 logger = logging.getLogger(__name__)
 
 _pool: asyncpg.Pool | None = None
+_pool_init_time: float = 0.0
+_pool_lock = asyncio.Lock()
+_uses_secrets_manager: bool = False
+
+_AUTH_ERRORS = (
+    asyncpg.exceptions.InvalidPasswordError,
+    asyncpg.exceptions.InvalidAuthorizationSpecificationError,
+)
 
 
 def _build_dsn_from_secrets_manager() -> str:
@@ -36,13 +46,36 @@ def _build_dsn_from_secrets_manager() -> str:
 
 
 async def init_pool() -> asyncpg.Pool:
-    global _pool
+    global _pool, _pool_init_time, _uses_secrets_manager
     dsn = os.environ.get("DATABASE_URL")
-    if not dsn:
+    if dsn:
+        _uses_secrets_manager = False
+    else:
         dsn = _build_dsn_from_secrets_manager()
+        _uses_secrets_manager = True
     _pool = await asyncpg.create_pool(dsn, min_size=2, max_size=10, ssl="require")
+    _pool_init_time = time.monotonic()
     logger.info("Postgres pool created (%s)", dsn.split("@")[-1])
     return _pool
+
+
+async def _refresh_pool_on_rotation() -> None:
+    """Re-fetch credentials from Secrets Manager and rebuild the pool.
+
+    A 30-second cooldown prevents concurrent failures from triggering multiple
+    back-to-back refreshes (thundering herd on rotation events).
+    No-op when DATABASE_URL is set (static DSN, no Secrets Manager involved).
+    """
+    if not _uses_secrets_manager:
+        return
+    async with _pool_lock:
+        if time.monotonic() - _pool_init_time < 30:
+            return
+        logger.warning("RDS auth failure — refreshing credentials from Secrets Manager")
+        old = _pool
+        if old:
+            await old.close()
+        await init_pool()
 
 
 async def close_pool() -> None:
@@ -62,19 +95,35 @@ def pool() -> asyncpg.Pool:
 # ---------------------------------------------------------------------------
 
 async def fetch(query: str, *args: Any) -> list[asyncpg.Record]:
-    return await pool().fetch(query, *args)
+    try:
+        return await pool().fetch(query, *args)
+    except _AUTH_ERRORS:
+        await _refresh_pool_on_rotation()
+        return await pool().fetch(query, *args)
 
 
 async def fetchrow(query: str, *args: Any) -> asyncpg.Record | None:
-    return await pool().fetchrow(query, *args)
+    try:
+        return await pool().fetchrow(query, *args)
+    except _AUTH_ERRORS:
+        await _refresh_pool_on_rotation()
+        return await pool().fetchrow(query, *args)
 
 
 async def fetchval(query: str, *args: Any) -> Any:
-    return await pool().fetchval(query, *args)
+    try:
+        return await pool().fetchval(query, *args)
+    except _AUTH_ERRORS:
+        await _refresh_pool_on_rotation()
+        return await pool().fetchval(query, *args)
 
 
 async def execute(query: str, *args: Any) -> str:
-    return await pool().execute(query, *args)
+    try:
+        return await pool().execute(query, *args)
+    except _AUTH_ERRORS:
+        await _refresh_pool_on_rotation()
+        return await pool().execute(query, *args)
 
 
 # ---------------------------------------------------------------------------
