@@ -288,4 +288,4 @@ curl -X POST https://dashboard.llm360.ai/eval360/api/ingest/eval-result \
 | RL dashboard (shares EC2) | `https://github.com/LLM360/rl360-snapshots` |
 | Eval framework | `https://github.com/LLM360/Eval360-V2` |
 | Dashboard URL | `https://dashboard.llm360.ai/eval360` |
-| Previous maintainer | varad0309@gmail.com |
+| Previous maintainer | pimpalkhutevarad@gmail.com |
