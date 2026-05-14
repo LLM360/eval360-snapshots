@@ -563,6 +563,109 @@ async def get_model_scores(model_id: str):
     return {"model_id": model_id, "scores": results}
 
 
+@app.post("/api/ingest/eval-result")
+async def ingest_eval_result(body: dict):
+    """Mock ingest endpoint for local import testing.
+
+    This mirrors the production ingest shape closely enough for backfill/import
+    scripts, but intentionally skips auth so local demos stay frictionless.
+    """
+    model_id = body["model_id"]
+    checkpoint_id = body["checkpoint_id"]
+    dataset_name = body["dataset_name"]
+    metrics = body.get("metrics") or {}
+    primary_metric = body.get("primary_metric") or next(iter(metrics), None)
+
+    model = next((m for m in MODELS if m["model_id"] == model_id), None)
+    if model is None:
+        MODELS.append({
+            "model_id": model_id,
+            "display_name": body.get("display_name") or model_id,
+            "model_type": body.get("model_type", "training"),
+            "owner": body.get("owner", "mock-ingest"),
+            "created_at": _now(),
+            "param_count": body.get("param_count"),
+            "is_pinned": False,
+        })
+    else:
+        model["display_name"] = body.get("display_name") or model["display_name"]
+        model["owner"] = body.get("owner") or model["owner"]
+        if body.get("param_count") is not None:
+            model["param_count"] = body["param_count"]
+
+    checkpoint = next((c for c in CHECKPOINTS if c["checkpoint_id"] == checkpoint_id), None)
+    if checkpoint is None:
+        CHECKPOINTS.append({
+            "checkpoint_id": checkpoint_id,
+            "model_id": model_id,
+            "training_step": body.get("training_step"),
+            "checkpoint_path": body.get("checkpoint_path"),
+            "metadata": body.get("metadata", {}),
+            "training_run": body.get("training_run"),
+            "recipe_tags": body.get("recipe_tags", []),
+            "created_at": _now(),
+        })
+    else:
+        checkpoint["training_step"] = body.get("training_step", checkpoint.get("training_step"))
+        checkpoint["checkpoint_path"] = body.get("checkpoint_path") or checkpoint.get("checkpoint_path")
+        checkpoint["metadata"] = body.get("metadata") or checkpoint.get("metadata", {})
+        checkpoint["training_run"] = body.get("training_run") or checkpoint.get("training_run")
+        checkpoint["recipe_tags"] = body.get("recipe_tags") or checkpoint.get("recipe_tags", [])
+
+    eval_run_id = body.get("eval_run_id") or f"{checkpoint_id}__{dataset_name}"
+    run = next((r for r in EVAL_RUNS if r["eval_run_id"] == eval_run_id), None)
+    run_payload = {
+        "eval_run_id": eval_run_id,
+        "checkpoint_id": checkpoint_id,
+        "dataset_name": dataset_name,
+        "status": body.get("status", "completed"),
+        "harness_commit": body.get("harness_commit"),
+        "grader_type": body.get("grader_type"),
+        "grader_version": body.get("grader_version"),
+        "prompt_template": body.get("prompt_template"),
+        "inference_config": body.get("inference_config", {}),
+        "dataset_version": body.get("dataset_version"),
+        "dataset_split": body.get("dataset_split", "test"),
+        "sample_count": body.get("sample_count"),
+        "seed": body.get("seed"),
+        "error_message": body.get("error_message"),
+        "ingested_at": _now(),
+    }
+    if run is None:
+        EVAL_RUNS.append(run_payload)
+    else:
+        run.update(run_payload)
+
+    for metric_name, metric_value in metrics.items():
+        existing = next(
+            (e for e in EVAL_RESULTS
+             if e["checkpoint_id"] == checkpoint_id
+             and e["dataset_name"] == dataset_name
+             and e["metric_name"] == metric_name),
+            None,
+        )
+        row = {
+            "checkpoint_id": checkpoint_id,
+            "dataset_name": dataset_name,
+            "metric_name": metric_name,
+            "metric_value": metric_value,
+            "is_primary": metric_name == primary_metric,
+            "eval_config": body.get("eval_config", {}),
+            "eval_run_id": eval_run_id,
+            "ci_lower": body.get("ci_lower"),
+            "ci_upper": body.get("ci_upper"),
+            "stderr": body.get("stderr"),
+            "sample_count": body.get("sample_count"),
+            "ingested_at": _now(),
+        }
+        if existing is None:
+            EVAL_RESULTS.append(row)
+        else:
+            existing.update(row)
+
+    return {"ok": True, "checkpoint_id": checkpoint_id, "dataset_name": dataset_name, "eval_run_id": eval_run_id}
+
+
 @app.get("/api/checkpoints/{checkpoint_id}")
 async def get_checkpoint(checkpoint_id: str):
     cp = next((c for c in CHECKPOINTS if c["checkpoint_id"] == checkpoint_id), None)

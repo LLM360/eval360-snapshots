@@ -109,5 +109,54 @@ Run `psql $DATABASE_URL -f schema.sql` to create or update all tables. The schem
 | `schema.sql` | Postgres DDL for all tables |
 | `index.html` | Single-page dashboard frontend |
 | `backfill.py` | CLI to import existing `_scores.yaml` files |
+| `import_excel.py` | CLI to import spreadsheet-style `.xlsx` score matrices |
 | `requirements.txt` | Python dependencies |
 | `systemd/` | Service file and env template |
+
+## Importing Spreadsheet Scores
+
+`import_excel.py` imports workbook sections shaped like:
+
+```text
+Group | Checkpoint | benchmark A | benchmark B
+Metric| -          | accuracy    | pass@1
+mid1  | 5000       | 59.5        | 76.6
+```
+
+Preview parsed rows:
+
+```bash
+cd viewer
+python3 import_excel.py --xlsx /lustrefs/users/yuqi.wang/Eval360-V2/evaluation.xlsx
+```
+
+Test locally without touching production:
+
+```bash
+# Terminal 1
+cd viewer
+python3 mock_server.py --port 11001
+
+# Terminal 2
+cd viewer
+python3 import_excel.py \
+  --xlsx /lustrefs/users/yuqi.wang/Eval360-V2/evaluation.xlsx \
+  --sheets 4b-mid \
+  --dashboard-url http://localhost:11001 \
+  --token local \
+  --apply
+```
+
+Then open `http://localhost:11001/#spreadsheet`. The mock server is in-memory, so stopping it discards the import.
+
+Upload through the existing ingest API:
+
+```bash
+python3 import_excel.py \
+  --xlsx /lustrefs/users/yuqi.wang/Eval360-V2/evaluation.xlsx \
+  --dashboard-url https://dashboard.llm360.ai/eval360 \
+  --token "$EVAL360_DASHBOARD_TOKEN" \
+  --apply
+```
+
+The importer stores dashboard scores normalized to `0..1` when workbook values are percentages, and keeps the original workbook number in `eval_config.excel.values`. The Spreadsheet tab displays those original values so the dashboard table matches the Excel sheet.

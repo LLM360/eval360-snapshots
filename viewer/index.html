@@ -617,6 +617,111 @@ select option { background: var(--surface); }
 .pivot tbody tr:hover { background: rgba(255,255,255,0.02); }
 
 /* ===================================================================
+   SPREADSHEET VIEW
+   =================================================================== */
+.sheet-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.sheet-controls label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sheet-table-wrap {
+  overflow: auto;
+  border: 1px solid #cfd7e3;
+  border-radius: var(--radius);
+  background: #fff;
+  max-height: calc(100vh - 210px);
+}
+
+.sheet-matrix {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+  color: #111827;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+.sheet-matrix th,
+.sheet-matrix td {
+  border-right: 1px solid #d9e0ea;
+  border-bottom: 1px solid #d9e0ea;
+  height: 22px;
+  padding: 2px 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #fff;
+}
+
+.sheet-matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #f8fafc;
+  color: #111827;
+  font-weight: 700;
+  text-align: left;
+}
+
+.sheet-matrix thead tr:nth-child(2) th { top: 22px; font-weight: 400; }
+
+.sheet-matrix tbody tr:hover td { background: #eef6ff; }
+
+.sheet-matrix .sheet-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-matrix .sheet-sticky-1,
+.sheet-matrix .sheet-sticky-2 {
+  position: sticky;
+  z-index: 4;
+}
+
+.sheet-matrix .sheet-sticky-1 {
+  left: 0;
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+}
+
+.sheet-matrix .sheet-sticky-2 {
+  left: 150px;
+  width: 90px;
+  min-width: 90px;
+  max-width: 90px;
+}
+
+.sheet-matrix thead .sheet-sticky-1,
+.sheet-matrix thead .sheet-sticky-2 {
+  z-index: 8;
+  background: #f8fafc;
+}
+
+.sheet-dataset-col {
+  width: 128px;
+  min-width: 128px;
+  max-width: 128px;
+}
+
+.sheet-import-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+
+/* ===================================================================
    UTILITIES
    =================================================================== */
 .loading {
@@ -781,6 +886,7 @@ select option { background: var(--surface); }
     <a class="nav-tab" href="#observatory" data-tab="observatory">Observatory</a>
     <a class="nav-tab" href="#models" data-tab="models">Models</a>
     <a class="nav-tab" href="#leaderboard" data-tab="leaderboard">Leaderboard</a>
+    <a class="nav-tab" href="#spreadsheet" data-tab="spreadsheet">Spreadsheet</a>
     <a class="nav-tab" href="#activity" data-tab="activity">Activity</a>
   </div>
 </nav>
@@ -1332,6 +1438,9 @@ async function route() {
     } else if (hash === '#leaderboard') {
       setTab('leaderboard');
       await viewLeaderboard(app);
+    } else if (hash === '#spreadsheet') {
+      setTab('spreadsheet');
+      await viewSpreadsheet(app);
     } else if (hash === '#activity') {
       setTab('activity');
       await viewActivity(app);
@@ -2485,6 +2594,307 @@ async function viewLeaderboard(app) {
     populateSortSelect(currentData);
     renderPivot(currentData, '');
   });
+}
+
+/* ===================================================================
+   VIEW: SPREADSHEET (Excel-style checkpoint matrix)
+   =================================================================== */
+function parseMaybeJson(v) {
+  if (!v) return {};
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch (_) { return {}; }
+}
+
+function parseSpreadsheetModel(model) {
+  const parts = String(model.model_id || '').split('__');
+  if ((model.owner === 'excel' || parts[0] === 'excel') && parts.length >= 4) {
+    return {
+      imported: true,
+      sheetKey: parts[1],
+      sheetLabel: parts[1],
+      sectionKey: parts[2],
+      groupKey: parts.slice(3).join('__'),
+    };
+  }
+  return {
+    imported: false,
+    sheetKey: 'dashboard',
+    sheetLabel: 'Dashboard Scores',
+    sectionKey: 'dashboard',
+    groupKey: model.model_id,
+  };
+}
+
+function formatSheetNumber(v) {
+  if (v == null || Number.isNaN(v)) return '';
+  const abs = Math.abs(v);
+  if (abs >= 10) return v.toFixed(2).replace(/\.?0+$/, '');
+  if (abs >= 1) return v.toFixed(3).replace(/\.?0+$/, '');
+  return v.toFixed(4).replace(/\.?0+$/, '');
+}
+
+function csvEscape(v) {
+  const s = String(v == null ? '' : v);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+async function viewSpreadsheet(app) {
+  clearNode(app);
+  const wrap = el('div', {class:'page-enter'});
+  app.appendChild(wrap);
+  wrap.appendChild(el('div', {class:'loading'}, 'Loading spreadsheet data...'));
+
+  let modelResp = await api('/api/models?owner=excel');
+  let models = modelResp.models || [];
+  const usingImportedExcel = models.length > 0;
+  if (!usingImportedExcel) {
+    modelResp = await api('/api/models');
+    models = modelResp.models || [];
+  }
+
+  clearNode(wrap);
+  const title = el('div', {class:'section-head'}, 'Checkpoint Spreadsheet');
+  wrap.appendChild(title);
+  const note = el('div', {class:'sheet-import-note'});
+  note.textContent = usingImportedExcel
+    ? 'Showing Excel-imported runs. Values are displayed with the original workbook scale.'
+    : 'No owner=excel imports found, so this view is pivoting the current dashboard scores.';
+  wrap.appendChild(note);
+
+  if (!models.length) {
+    wrap.appendChild(el('div', {class:'empty-state'}, 'No models found.'));
+    return;
+  }
+
+  for (const m of models) m._sheet = parseSpreadsheetModel(m);
+  const sheetMap = new Map();
+  for (const m of models) {
+    if (!sheetMap.has(m._sheet.sheetKey)) sheetMap.set(m._sheet.sheetKey, []);
+    sheetMap.get(m._sheet.sheetKey).push(m);
+  }
+
+  const controls = el('div', {class:'sheet-controls'});
+  controls.appendChild(el('label', null, 'Sheet'));
+  const sheetSelect = document.createElement('select');
+  for (const [key, sheetModels] of sheetMap.entries()) {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = sheetModels[0]._sheet.sheetLabel + ' (' + sheetModels.length + ' groups)';
+    sheetSelect.appendChild(opt);
+  }
+  controls.appendChild(sheetSelect);
+
+  controls.appendChild(el('label', null, 'Group'));
+  const groupSelect = document.createElement('select');
+  controls.appendChild(groupSelect);
+
+  controls.appendChild(el('label', null, 'Metrics'));
+  const metricSelect = document.createElement('select');
+  metricSelect.appendChild(el('option', {value:'all'}, 'All'));
+  metricSelect.appendChild(el('option', {value:'primary'}, 'Primary only'));
+  controls.appendChild(metricSelect);
+
+  const exportBtn = el('button', {class:'btn', style:'margin-left:auto'}, 'Export CSV');
+  controls.appendChild(exportBtn);
+  wrap.appendChild(controls);
+
+  const tableContainer = el('div');
+  wrap.appendChild(tableContainer);
+
+  let currentRows = [];
+  let currentColumns = [];
+
+  function selectedModels() {
+    const sheetModels = sheetMap.get(sheetSelect.value) || [];
+    if (!groupSelect.value) return sheetModels;
+    return sheetModels.filter(m => m.model_id === groupSelect.value);
+  }
+
+  function refreshGroupOptions() {
+    clearNode(groupSelect);
+    groupSelect.appendChild(el('option', {value:''}, 'All groups'));
+    const sheetModels = [...(sheetMap.get(sheetSelect.value) || [])];
+    sheetModels.sort((a, b) => a.display_name.localeCompare(b.display_name) || a.model_id.localeCompare(b.model_id));
+    for (const m of sheetModels) {
+      const opt = document.createElement('option');
+      opt.value = m.model_id;
+      opt.textContent = m.display_name;
+      if (sheetModels.filter(x => x.display_name === m.display_name).length > 1) {
+        opt.textContent += ' [' + m._sheet.sectionKey + ']';
+      }
+      groupSelect.appendChild(opt);
+    }
+  }
+
+  function displayValueForScore(score) {
+    const cfg = parseMaybeJson(score.eval_config);
+    const excel = cfg.excel || {};
+    if (excel.values && Object.prototype.hasOwnProperty.call(excel.values, score.metric_name)) {
+      const original = Number(excel.values[score.metric_name]);
+      return Number.isFinite(original) ? original : null;
+    }
+    const v = Number(score.metric_value);
+    if (!Number.isFinite(v)) return null;
+    return v >= 0 && v <= 1 ? v * 100 : v;
+  }
+
+  function buildMatrix(scoreBundles) {
+    const columnMap = new Map();
+    const rowMap = new Map();
+    const primaryOnly = metricSelect.value === 'primary';
+
+    for (const bundle of scoreBundles) {
+      const model = bundle.model;
+      for (const score of bundle.scores) {
+        if (primaryOnly && !score.is_primary) continue;
+        const cfg = parseMaybeJson(score.eval_config);
+        const excel = cfg.excel || {};
+        const metricName = score.metric_name || 'score';
+        const key = score.dataset_name + '\u0001' + metricName;
+        const colOrder = excel.col_indices && excel.col_indices[metricName] != null
+          ? Number(excel.col_indices[metricName])
+          : 10000 + columnMap.size;
+
+        if (!columnMap.has(key)) {
+          columnMap.set(key, {
+            key,
+            dataset: score.dataset_name,
+            metric: metricName,
+            order: colOrder,
+          });
+        } else {
+          columnMap.get(key).order = Math.min(columnMap.get(key).order, colOrder);
+        }
+
+        const rowKey = model.model_id + '\u0001' + score.checkpoint_id;
+        if (!rowMap.has(rowKey)) {
+          const checkpoint = excel.checkpoint || (score.training_step != null ? String(score.training_step) : score.checkpoint_id);
+          rowMap.set(rowKey, {
+            key: rowKey,
+            group: excel.group || model.display_name,
+            sectionTitle: excel.section_title || '',
+            checkpoint,
+            step: score.training_step,
+            modelId: model.model_id,
+            cells: {},
+          });
+        }
+        rowMap.get(rowKey).cells[key] = displayValueForScore(score);
+      }
+    }
+
+    const columns = [...columnMap.values()].sort((a, b) =>
+      a.order - b.order || a.dataset.localeCompare(b.dataset) || a.metric.localeCompare(b.metric)
+    );
+    const rows = [...rowMap.values()].sort((a, b) => {
+      const g = a.group.localeCompare(b.group);
+      if (g) return g;
+      const as = a.step == null ? Number.POSITIVE_INFINITY : a.step;
+      const bs = b.step == null ? Number.POSITIVE_INFINITY : b.step;
+      if (as !== bs) return as - bs;
+      return String(a.checkpoint).localeCompare(String(b.checkpoint));
+    });
+    return {rows, columns};
+  }
+
+  function renderTable(rows, columns) {
+    currentRows = rows;
+    currentColumns = columns;
+    clearNode(tableContainer);
+    if (!rows.length || !columns.length) {
+      tableContainer.appendChild(el('div', {class:'empty-state'}, 'No scores for the selected filters.'));
+      return;
+    }
+
+    const scroller = el('div', {class:'sheet-table-wrap'});
+    const table = document.createElement('table');
+    table.className = 'sheet-matrix';
+    const thead = document.createElement('thead');
+
+    const row1 = document.createElement('tr');
+    const groupTh = el('th', {class:'sheet-sticky-1'}, 'Group');
+    groupTh.rowSpan = 2;
+    row1.appendChild(groupTh);
+    const checkpointTh = el('th', {class:'sheet-sticky-2'}, 'Checkpoint');
+    checkpointTh.rowSpan = 2;
+    row1.appendChild(checkpointTh);
+    for (const col of columns) {
+      const th = el('th', {class:'sheet-dataset-col', title: col.dataset}, col.dataset);
+      row1.appendChild(th);
+    }
+    thead.appendChild(row1);
+
+    const row2 = document.createElement('tr');
+    for (const col of columns) {
+      const th = el('th', {class:'sheet-dataset-col', title: col.metric}, col.metric);
+      row2.appendChild(th);
+    }
+    thead.appendChild(row2);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const row of rows) {
+      const tr = document.createElement('tr');
+      const groupTd = el('td', {class:'sheet-sticky-1', title: row.sectionTitle || row.group}, row.group);
+      tr.appendChild(groupTd);
+      tr.appendChild(el('td', {class:'sheet-sticky-2'}, row.checkpoint));
+      for (const col of columns) {
+        const v = row.cells[col.key];
+        const td = el('td', {class:'sheet-number'}, v == null ? '' : formatSheetNumber(v));
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    scroller.appendChild(table);
+    tableContainer.appendChild(scroller);
+  }
+
+  async function reload() {
+    clearNode(tableContainer);
+    tableContainer.appendChild(el('div', {class:'loading'}, 'Pivoting scores...'));
+    const targetModels = selectedModels();
+    const settled = await Promise.allSettled(targetModels.map(model =>
+      api('/api/models/' + encodeURIComponent(model.model_id) + '/scores').then(data => ({model, scores: data.scores || []}))
+    ));
+    const bundles = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+    const matrix = buildMatrix(bundles);
+    renderTable(matrix.rows, matrix.columns);
+  }
+
+  exportBtn.addEventListener('click', () => {
+    if (!currentRows.length || !currentColumns.length) return;
+    const lines = [];
+    lines.push(['Group', 'Checkpoint', ...currentColumns.map(c => c.dataset)].map(csvEscape).join(','));
+    lines.push(['Metric', '-', ...currentColumns.map(c => c.metric)].map(csvEscape).join(','));
+    for (const row of currentRows) {
+      lines.push([
+        row.group,
+        row.checkpoint,
+        ...currentColumns.map(c => row.cells[c.key] == null ? '' : formatSheetNumber(row.cells[c.key])),
+      ].map(csvEscape).join(','));
+    }
+    const blob = new Blob([lines.join('\n') + '\n'], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'eval360-spreadsheet.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  sheetSelect.addEventListener('change', async () => {
+    refreshGroupOptions();
+    await reload();
+  });
+  groupSelect.addEventListener('change', reload);
+  metricSelect.addEventListener('change', reload);
+
+  refreshGroupOptions();
+  await reload();
 }
 
 /* ===================================================================
