@@ -8,6 +8,21 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+/* Set the theme before first paint so there's no flash of the wrong theme.
+   Preference order: saved choice → OS preference → dark. */
+(function () {
+  try {
+    var t = localStorage.getItem('eval360-theme');
+    if (t !== 'light' && t !== 'dark') {
+      t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+</script>
 <style>
 /* ===================================================================
    DESIGN TOKENS
@@ -37,6 +52,84 @@
   --font-mono:  'JetBrains Mono', monospace;
   --shadow:     0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
   --shadow-lg:  0 4px 12px rgba(0,0,0,0.5);
+}
+
+/* ===================================================================
+   LIGHT THEME — "MAI Cream"
+   Adapted from microsoft.ai (mai-thinking-1): cream backgrounds,
+   taupe text, camel/bronze accent. Semantic colors are warm and
+   WCAG-AA legible on cream (>=4.5 for normal text). Dark mode is
+   untouched. Toggled via <html data-theme="light">.
+   =================================================================== */
+html[data-theme="light"] {
+  --bg:         #fef9ed;              /* microsoft.ai --background-color */
+  --bg-raised:  #fffefb;
+  --surface:    #fffefb;
+  --surface-2:  #f7ecd9;             /* their deeper section band */
+  --border:     rgba(93,82,75,0.16); /* taupe divider (theirs: rgba(93,82,75,.30)) */
+  --border-2:   rgba(93,82,75,0.32);
+  --text:       #5d524b;             /* microsoft.ai --text-color */
+  --text-bright:#2e2823;
+  --muted:      #736556;
+  --accent:     #8a5e2c;             /* legible bronze derived from their camel #a67c52 */
+  --accent-dim: rgba(166,124,82,0.16);/* tint uses the original camel #a67c52 */
+  --green:      #2f7a43;
+  --green-dim:  rgba(47,122,67,0.13);
+  --red:        #b83a14;
+  --red-dim:    rgba(184,58,20,0.12);
+  --amber:      #a8530a;
+  --amber-dim:  rgba(168,83,10,0.13);
+  --teal:       #2f8f86;
+  --shadow:     0 1px 3px rgba(93,82,75,0.10), 0 1px 2px rgba(93,82,75,0.08);
+  --shadow-lg:  0 6px 20px rgba(93,82,75,0.16);
+}
+
+/* Faint warm camel glow instead of the dark theme's cool one */
+html[data-theme="light"] body {
+  background-image: radial-gradient(ellipse at 50% 0%, rgba(166,124,82,0.06) 0%, transparent 55%);
+}
+
+/* ---- Light-mode fixes for dark-only hardcoded colors (dark stays untouched) ---- */
+/* "warning" badge: light text on the darker light-mode amber */
+html[data-theme="light"] .alert-badge.warning { color: #fff; }
+/* Button label: white reads better than cream on the bronze accent */
+html[data-theme="light"] .btn { color: #fff; }
+html[data-theme="light"] .btn:hover { box-shadow: 0 0 12px rgba(138,94,44,0.22); }
+/* Promotion no_rules/no_data chips used a white tint that's invisible on cream */
+html[data-theme="light"] .promotion-badge.no_rules,
+html[data-theme="light"] .promotion-badge.no_data { background: var(--surface-2); }
+/* Row/tab hover used a white overlay that's invisible on cream */
+html[data-theme="light"] .nav-tab:hover,
+html[data-theme="light"] .heatmap tbody tr:hover,
+html[data-theme="light"] .pivot tbody tr:hover,
+html[data-theme="light"] .example-table tbody tr:hover { background: var(--surface-2); }
+/* Danger/error borders hardcoded the dark salmon red — match the warm red */
+html[data-theme="light"] .btn-danger,
+html[data-theme="light"] .error-msg { border-color: rgba(184,58,20,0.35); }
+
+/* ===================================================================
+   THEME TOGGLE BUTTON (nav)
+   =================================================================== */
+.theme-toggle {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.theme-toggle:hover {
+  color: var(--accent);
+  border-color: var(--border-2);
+  background: var(--accent-dim);
 }
 
 /* ===================================================================
@@ -783,6 +876,7 @@ select option { background: var(--surface); }
     <a class="nav-tab" href="#leaderboard" data-tab="leaderboard">Leaderboard</a>
     <a class="nav-tab" href="#activity" data-tab="activity">Activity</a>
   </div>
+  <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light/dark theme"></button>
 </nav>
 
 <main id="app">
@@ -810,13 +904,14 @@ function modelColor(id) {
 function scoreColor(v) {
   if (v == null) return 'var(--muted)';
   const hue = Math.round(v * 140);
-  return `hsl(${hue}, 65%, 55%)`;
+  // Much darker in light mode so green/high-score text clears WCAG on the tint (worst hue ~5.3:1).
+  return isLight() ? `hsl(${hue}, 66%, 24%)` : `hsl(${hue}, 65%, 55%)`;
 }
 
 function scoreBg(v) {
   if (v == null) return 'transparent';
   const hue = Math.round(v * 140);
-  return `hsla(${hue}, 65%, 55%, 0.12)`;
+  return isLight() ? `hsla(${hue}, 70%, 42%, 0.13)` : `hsla(${hue}, 65%, 55%, 0.12)`;
 }
 
 function gapClass(gap) {
@@ -847,7 +942,98 @@ function destroyCharts() { _charts.forEach(c => { try { c.destroy(); } catch(_){
 
 /* Chart.js defaults */
 Chart.defaults.font.family = "'Outfit', sans-serif";
-Chart.defaults.color = '#6b7a8d';
+
+/* ===================================================================
+   THEME (light / dark) — driven by the CSS custom properties above
+   =================================================================== */
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+function isLight() {
+  return document.documentElement.getAttribute('data-theme') === 'light';
+}
+/* Resolve the current theme's colors for Chart.js (which can't read CSS vars). */
+function chartColors() {
+  return {
+    grid:          cssVar('--border'),
+    tick:          cssVar('--muted'),
+    legend:        cssVar('--text'),
+    tooltipBg:     cssVar('--surface'),
+    tooltipBorder: cssVar('--border-2'),
+    tooltipTitle:  cssVar('--text-bright'),
+    tooltipBody:   cssVar('--muted'),
+    green:         cssVar('--green'),
+    red:           cssVar('--red'),
+  };
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  Chart.defaults.color = cssVar('--muted');
+  const btn = document.getElementById('themeToggle');
+  if (btn) {
+    // Show the theme you'll switch TO: ☀ in dark (→ light), ☾ in light (→ dark).
+    btn.textContent = theme === 'light' ? '☾' : '☀';
+    btn.title = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+  }
+}
+function toggleTheme() {
+  const next = isLight() ? 'dark' : 'light';
+  try { localStorage.setItem('eval360-theme', next); } catch (e) {}
+  applyTheme(next);
+  // Recolor in place instead of route() — preserves all page state (compare
+  // selections, toggles, an open example browser), avoids a flash + scroll jump.
+  recolorCharts();
+  restyleScoredEls();
+}
+function initTheme() {
+  // data-theme was already set pre-paint by the inline <head> script.
+  applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.addEventListener('click', toggleTheme);
+}
+/* Repaint live Chart.js instances for the current theme (canvas can't use CSS vars). */
+function recolorCharts() {
+  const cc = chartColors();
+  for (const ch of _charts) {
+    if (!ch || !ch.options) continue;
+    const o = ch.options;
+    if (o.scales) {
+      for (const ax of Object.values(o.scales)) {
+        if (ax && ax.grid && ax.grid.display !== false) ax.grid.color = cc.grid;
+        if (ax && ax.ticks) ax.ticks.color = cc.tick;
+      }
+    }
+    if (o.plugins && o.plugins.legend && o.plugins.legend.labels) o.plugins.legend.labels.color = cc.legend;
+    if (o.plugins && o.plugins.tooltip) {
+      o.plugins.tooltip.backgroundColor = cc.tooltipBg;
+      o.plugins.tooltip.borderColor = cc.tooltipBorder;
+      o.plugins.tooltip.titleColor = cc.tooltipTitle;
+      o.plugins.tooltip.bodyColor = cc.tooltipBody;
+    }
+    // Delta bar chart stashes its gap data so we can rebuild the green/red fills.
+    if (ch.$gaps && ch.data && ch.data.datasets[0]) {
+      ch.data.datasets[0].backgroundColor = ch.$gaps.map(g => {
+        const sig = g.significance || 'insufficient_data';
+        const alpha = sig === 'likely_noise' ? '66' : sig === 'insufficient_data' ? '99' : 'ff';
+        return ((g.gap || 0) >= 0 ? cc.green : cc.red) + alpha;
+      });
+      ch.data.datasets[0].borderColor = ch.$gaps.map(g => (g.gap || 0) >= 0 ? cc.green : cc.red);
+    }
+    try { ch.update('none'); } catch (e) {}
+  }
+}
+/* Re-apply the JS-computed score colors (hsl gradient) to already-rendered elements.
+   CSS-var-driven inline styles re-resolve automatically; only these need a repaint. */
+function restyleScoredEls() {
+  document.querySelectorAll('[data-score]').forEach(td => {
+    const v = parseFloat(td.dataset.score);
+    if (!isNaN(v)) { td.style.color = scoreColor(v); td.style.background = scoreBg(v); }
+  });
+  document.querySelectorAll('[data-score-text]').forEach(span => {
+    const v = parseFloat(span.dataset.scoreText);
+    if (!isNaN(v)) span.style.color = scoreColor(v);
+  });
+}
 
 /* ===================================================================
    DOM HELPERS
@@ -983,6 +1169,7 @@ function renderScoreCell(td, entry, bestVal, dsName) {
     td.textContent = v.toFixed(2);
     td.style.color = scoreColor(v);
     td.style.background = scoreBg(v);
+    td.dataset.score = v;   // for in-place recolor on theme toggle
     if (bestVal != null && Math.abs(v - bestVal) < 0.0001) td.classList.add('best-in-col');
     if (entry.eval_run_id) {
       td.dataset.evalRunId = entry.eval_run_id;
@@ -1350,6 +1537,7 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
+window.addEventListener('DOMContentLoaded', initTheme);
 window.addEventListener('DOMContentLoaded', route);
 
 /* ===================================================================
@@ -1587,6 +1775,7 @@ async function viewModels(app) {
       if (status === 'completed' && v != null) {
         valSpan = el('span', {class:'ds-val'}, v.toFixed(2));
         valSpan.style.color = scoreColor(v);
+        valSpan.dataset.scoreText = v;   // for in-place recolor on theme toggle
         if (entry.eval_run_id) {
           chip.style.cursor = 'pointer';
           chip.addEventListener('click', (e) => {
@@ -1803,6 +1992,7 @@ async function viewModelDetail(app, modelId) {
     const valTd = el('td', {class:'gap-value'});
     valTd.textContent = info.value.toFixed(4);
     valTd.style.color = scoreColor(info.value);
+    valTd.dataset.scoreText = info.value;   // for in-place recolor on theme toggle
     if (info.sample_count != null) {
       valTd.appendChild(document.createTextNode(' '));
       valTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:10px'}, 'n=' + info.sample_count));
@@ -1864,11 +2054,12 @@ async function viewModelDetail(app, modelId) {
 
     deltaPanelTitle.textContent = 'Gap Analysis vs ' + refName;
 
+    const cc = chartColors();
     const barColors = gaps.map(g => {
       const gap = g.gap || 0;
       const sig = g.significance || 'insufficient_data';
       const alpha = sig === 'likely_noise' ? '66' : sig === 'insufficient_data' ? '99' : 'ff';
-      return gap >= 0 ? '#34d399' + alpha : '#f87171' + alpha;
+      return (gap >= 0 ? cc.green : cc.red) + alpha;
     });
 
     deltaChart = new Chart(deltaCanvas, {
@@ -1879,7 +2070,7 @@ async function viewModelDetail(app, modelId) {
           label: 'Gap',
           data: gaps.map(g => g.gap),
           backgroundColor: barColors,
-          borderColor: gaps.map(g => g.gap >= 0 ? '#34d399' : '#f87171'),
+          borderColor: gaps.map(g => g.gap >= 0 ? cc.green : cc.red),
           borderWidth: 1,
           borderRadius: 3,
         }],
@@ -1890,25 +2081,26 @@ async function viewModelDetail(app, modelId) {
         maintainAspectRatio: false,
         scales: {
           x: {
-            grid: { color: '#1e2733' },
-            ticks: { color: '#6b7a8d', font: { size: 11, family: 'JetBrains Mono' } },
+            grid: { color: cc.grid },
+            ticks: { color: cc.tick, font: { size: 11, family: 'JetBrains Mono' } },
           },
           y: {
             grid: { display: false },
-            ticks: { color: '#8b9bb0', font: { size: 11, family: 'Outfit' } },
+            ticks: { color: cc.tick, font: { size: 11, family: 'Outfit' } },
           },
         },
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: '#141a22', borderColor: '#2a3444', borderWidth: 1,
-            titleColor: '#f0f4f8', bodyColor: '#8b9bb0',
+            backgroundColor: cc.tooltipBg, borderColor: cc.tooltipBorder, borderWidth: 1,
+            titleColor: cc.tooltipTitle, bodyColor: cc.tooltipBody,
             callbacks: { label(ctx) { const v = ctx.raw; return (v > 0 ? '+' : '') + v.toFixed(4); } },
           },
         },
       },
     });
     _charts.push(deltaChart);
+    deltaChart.$gaps = gaps;   // stash for in-place recolor on theme toggle
   }
 
   // Default: best baseline reference
@@ -2018,6 +2210,7 @@ async function viewModelDetail(app, modelId) {
       const valTd = el('td', {class:'gap-value'});
       valTd.textContent = info.value.toFixed(4);
       valTd.style.color = scoreColor(info.value);
+      valTd.dataset.scoreText = info.value;   // for in-place recolor on theme toggle
       if (info.sample_count != null) {
         valTd.appendChild(document.createTextNode(' '));
         valTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:10px'}, 'n=' + info.sample_count));
@@ -2125,6 +2318,7 @@ async function viewModelDetail(app, modelId) {
     _charts.filter(c => !keep.includes(c)).forEach(c => { try { c.destroy(); } catch(_){} });
     _charts = [...keep];
     clearNode(chartGrid);
+    const cc = chartColors();
 
     const useCommonOnly = commonToggle.checked;
     const showBands = bandToggle.checked;
@@ -2260,20 +2454,20 @@ async function viewModelDetail(app, modelId) {
           animation: { duration: 300 },
           interaction: { mode: 'index', intersect: false },
           scales: {
-            x: { type:'linear', ticks:{color:'#6b7a8d', maxTicksLimit:6, font:{size:11}}, grid:{color:'#1e2733'} },
-            y: { min:yMin, max:yMax, ticks:{color:'#6b7a8d', maxTicksLimit:5, font:{size:11,family:'JetBrains Mono'}}, grid:{color:'#1e2733'} },
+            x: { type:'linear', ticks:{color:cc.tick, maxTicksLimit:6, font:{size:11}}, grid:{color:cc.grid} },
+            y: { min:yMin, max:yMax, ticks:{color:cc.tick, maxTicksLimit:5, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid} },
           },
           plugins: {
             legend: {
               labels:{
-                color:'#d4dce8', boxWidth:12, font:{size:11},
+                color:cc.legend, boxWidth:12, font:{size:11},
                 filter: function(item, chartData) {
                   return !chartData.datasets[item.datasetIndex]._isCIBand;
                 },
               },
             },
             tooltip: {
-              backgroundColor:'#141a22', borderColor:'#2a3444', borderWidth:1, titleColor:'#f0f4f8', bodyColor:'#8b9bb0',
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
               callbacks: { label(ctx) { if (ctx.dataset._isCIBand) return null; const r=ctx.raw; return ctx.dataset.label+': '+r.y.toFixed(4)+(r.x!=null?' (step '+r.x+')':''); } },
               filter: function(tooltipItem) { return !tooltipItem.dataset._isCIBand; },
             },
