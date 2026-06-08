@@ -613,6 +613,26 @@ select option { background: var(--surface); }
 
 .btn-danger:hover { background: var(--red-dim); box-shadow: none; opacity: 1; }
 
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.btn-secondary:hover {
+  border-color: var(--border-2);
+  background: var(--accent-dim);
+  color: var(--accent);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
 .confirm-dialog {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 200;
@@ -666,6 +686,293 @@ select option { background: var(--surface); }
 }
 
 .chart-wrap { position: relative; height: 210px; }
+
+/* ===================================================================
+   COMPARE WORKFLOW
+   =================================================================== */
+.compare-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.compare-toolbar,
+.compare-summary,
+.compare-chart-panel,
+.compare-table-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.compare-toolbar {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.compare-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.compare-toolbar label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.compare-selected {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 34px;
+  align-items: center;
+}
+
+.compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  color: var(--text);
+  font-size: 12px;
+  max-width: 280px;
+}
+
+.compare-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-chip-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.compare-chip-remove {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.compare-chip-remove:hover {
+  color: var(--red);
+  border-color: rgba(248,113,113,0.35);
+  background: var(--red-dim);
+}
+
+.compare-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.compare-stat {
+  padding: 14px 16px;
+  border-right: 1px solid var(--border);
+}
+
+.compare-stat:last-child { border-right: none; }
+
+.compare-stat-value {
+  font-family: var(--font-mono);
+  color: var(--text-bright);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.compare-stat-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 3px;
+}
+
+.compare-chart-panel {
+  padding: 16px;
+}
+
+.compare-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.compare-mode-tabs {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.compare-mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compare-mode-btn.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.compare-big-chart {
+  position: relative;
+  height: 360px;
+}
+
+.compare-table-panel {
+  overflow-x: auto;
+}
+
+.compare-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.compare-table th {
+  background: var(--bg-raised);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.compare-table th:first-child,
+.compare-table td:first-child {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.compare-table thead th:first-child {
+  background: var(--bg-raised);
+  z-index: 2;
+}
+
+.compare-score {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.compare-delta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-left: 6px;
+}
+
+.compare-missing {
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.compare-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.compare-select-cell {
+  width: 42px;
+  min-width: 42px;
+  text-align: center !important;
+}
+
+.model-compare-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.pivot tbody tr.compare-selected-row {
+  background: var(--accent-dim);
+}
+
+.compare-tray {
+  position: sticky;
+  bottom: 16px;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.compare-tray.visible {
+  display: flex;
+}
+
+.compare-tray-count {
+  font-family: var(--font-mono);
+  color: var(--text-bright);
+  font-weight: 700;
+}
+
+.card-compare-btn {
+  margin-left: auto;
+}
+
+@media (max-width: 860px) {
+  .compare-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compare-stat:nth-child(2) { border-right: none; }
+  .compare-stat:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+  .compare-big-chart { height: 320px; }
+}
+
+@media (max-width: 560px) {
+  nav { gap: 14px; padding: 0 14px; }
+  .nav-tab { padding: 6px 8px; }
+  main { padding: 20px 14px 60px; }
+  .compare-summary { grid-template-columns: 1fr; }
+  .compare-stat,
+  .compare-stat:nth-child(2),
+  .compare-stat:nth-child(-n+2) {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .compare-stat:last-child { border-bottom: none; }
+}
 
 /* ===================================================================
    LEADERBOARD PIVOT
@@ -874,6 +1181,7 @@ select option { background: var(--surface); }
     <a class="nav-tab" href="#observatory" data-tab="observatory">Observatory</a>
     <a class="nav-tab" href="#models" data-tab="models">Models</a>
     <a class="nav-tab" href="#leaderboard" data-tab="leaderboard">Leaderboard</a>
+    <a class="nav-tab" href="#compare" data-tab="compare">Compare</a>
     <a class="nav-tab" href="#activity" data-tab="activity">Activity</a>
   </div>
   <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light/dark theme"></button>
@@ -1018,6 +1326,13 @@ function recolorCharts() {
         return ((g.gap || 0) >= 0 ? cc.green : cc.red) + alpha;
       });
       ch.data.datasets[0].borderColor = ch.$gaps.map(g => (g.gap || 0) >= 0 ? cc.green : cc.red);
+    }
+    if (ch.$compareDeltaValues && ch.data && ch.data.datasets) {
+      ch.data.datasets.forEach((ds, i) => {
+        const vals = ch.$compareDeltaValues[i] || [];
+        ds.backgroundColor = vals.map(v => v == null ? 'rgba(128,128,128,0.22)' : (v >= 0 ? cc.green + 'aa' : cc.red + 'aa'));
+        ds.borderColor = vals.map(v => v == null ? 'rgba(128,128,128,0.4)' : (v >= 0 ? cc.green : cc.red));
+      });
     }
     try { ch.update('none'); } catch (e) {}
   }
@@ -1220,6 +1535,96 @@ async function api(path) {
   const r = await fetch(BASE_PATH + path);
   if (!r.ok) throw new Error('API error: ' + r.status);
   return r.json();
+}
+
+/* ===================================================================
+   COMPARE HELPERS
+   =================================================================== */
+const MAX_COMPARE_MODELS = 7;
+
+function parseHashQuery() {
+  const hash = location.hash || '';
+  const idx = hash.indexOf('?');
+  return new URLSearchParams(idx >= 0 ? hash.slice(idx + 1) : '');
+}
+
+function orderedDatasetsFromHeatmap(data) {
+  const ordered = [];
+  const seen = new Set();
+  const catOrder = Object.keys(data.categories || {}).sort();
+  for (const cat of catOrder) {
+    for (const ds of (data.categories[cat] || []).sort()) {
+      if ((data.datasets || []).includes(ds) && !seen.has(ds)) {
+        ordered.push(ds);
+        seen.add(ds);
+      }
+    }
+  }
+  for (const ds of data.datasets || []) {
+    if (!seen.has(ds)) {
+      ordered.push(ds);
+      seen.add(ds);
+    }
+  }
+  return ordered;
+}
+
+function modelById(data) {
+  const byId = new Map();
+  for (const m of data.models || []) byId.set(m.model_id, m);
+  return byId;
+}
+
+function completedScore(data, modelId, dataset) {
+  const entry = (data.matrix?.[modelId] || {})[dataset];
+  if (!entry || entry.status !== 'completed' || entry.score == null) return null;
+  return entry.score;
+}
+
+function averageScoreForModel(data, modelId, datasets) {
+  const vals = [];
+  for (const ds of datasets) {
+    const v = completedScore(data, modelId, ds);
+    if (v != null) vals.push(v);
+  }
+  if (!vals.length) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+function topModelsByAverage(data, count) {
+  const datasets = orderedDatasetsFromHeatmap(data);
+  return [...(data.models || [])]
+    .map(m => ({id: m.model_id, avg: averageScoreForModel(data, m.model_id, datasets)}))
+    .filter(x => x.avg != null)
+    .sort((a, b) => b.avg - a.avg)
+    .slice(0, count)
+    .map(x => x.id);
+}
+
+function buildCompareHash(state) {
+  const p = new URLSearchParams();
+  if (state.models.length) p.set('models', state.models.join(','));
+  if (state.baseline) p.set('baseline', state.baseline);
+  if (state.suite) p.set('suite', state.suite);
+  if (state.commonOnly) p.set('common_only', 'true');
+  if (state.benchmark) p.set('benchmark', state.benchmark);
+  if (state.mode && state.mode !== 'bars') p.set('mode', state.mode);
+  const qs = p.toString();
+  return '#compare' + (qs ? '?' + qs : '');
+}
+
+function setCompareUrl(state) {
+  const next = buildCompareHash(state);
+  if (location.hash !== next) history.replaceState(null, '', next);
+}
+
+function signed(v) {
+  if (v == null) return '\u2014';
+  return (v > 0 ? '+' : '') + v.toFixed(3);
+}
+
+function formatScore(v) {
+  return v == null ? '\u2014' : v.toFixed(3);
 }
 
 /* ===================================================================
@@ -1519,6 +1924,9 @@ async function route() {
     } else if (hash === '#leaderboard') {
       setTab('leaderboard');
       await viewLeaderboard(app);
+    } else if (hash.startsWith('#compare')) {
+      setTab('compare');
+      await viewCompare(app);
     } else if (hash === '#activity') {
       setTab('activity');
       await viewActivity(app);
@@ -1758,6 +2166,20 @@ async function viewModels(app) {
         alertBadgeSpan.innerHTML = '<span class="alert-badge critical" style="margin-left:6px;" title="Unacknowledged critical regressions">!</span>';
       }
     }).catch(() => {});
+
+    const compareBtn = el('button', {class:'btn btn-secondary btn-small card-compare-btn', type:'button'}, 'Compare');
+    compareBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      location.hash = buildCompareHash({
+        models: [m.model_id],
+        baseline: m.model_id,
+        suite: '',
+        commonOnly: false,
+        benchmark: '',
+        mode: 'bars',
+      });
+    });
+    header.appendChild(compareBtn);
 
     card.appendChild(el('div', {class:'card-meta'},
       'Owner: ' + m.owner + ' \u00b7 ' + m.checkpoint_count + ' checkpoints \u00b7 ' + m.dataset_count + ' datasets'));
@@ -2277,6 +2699,8 @@ async function viewModelDetail(app, modelId) {
   compareBar.appendChild(commonLabel);
   const updateBtn = el('button', {class:'btn'}, 'Update Charts');
   compareBar.appendChild(updateBtn);
+  const fullCompareBtn = el('button', {class:'btn btn-secondary'}, 'Open full comparison');
+  compareBar.appendChild(fullCompareBtn);
   wrap.appendChild(compareBar);
 
   // Section head for training curves
@@ -2488,9 +2912,691 @@ async function viewModelDetail(app, modelId) {
     await renderCurves(getSelectedCompareIds());
   });
 
+  fullCompareBtn.addEventListener('click', () => {
+    const ids = [modelId, ...getSelectedCompareIds()].slice(0, MAX_COMPARE_MODELS);
+    location.hash = buildCompareHash({
+      models: ids,
+      baseline: modelId,
+      suite: '',
+      commonOnly: false,
+      benchmark: '',
+      mode: 'bars',
+    });
+  });
+
   bandToggle.addEventListener('change', async () => {
     await renderCurves(getSelectedCompareIds());
   });
+}
+
+/* ===================================================================
+   VIEW: COMPARE MODELS
+   =================================================================== */
+async function viewCompare(app) {
+  clearNode(app);
+  const wrap = el('div', {class:'page-enter'});
+  app.appendChild(wrap);
+  wrap.appendChild(el('div', {class:'loading'}, 'Loading comparison...'));
+
+  const params = parseHashQuery();
+  const state = {
+    models: [],
+    baseline: params.get('baseline') || '',
+    suite: params.get('suite') || '',
+    commonOnly: params.get('common_only') === 'true',
+    benchmark: params.get('benchmark') || '',
+    mode: ['delta', 'radar', 'curves'].includes(params.get('mode')) ? params.get('mode') : 'bars',
+  };
+
+  async function loadHeatmap(suiteId) {
+    if (!suiteId) return api('/api/heatmap');
+    try {
+      return await api('/api/heatmap?suite_id=' + encodeURIComponent(suiteId));
+    } catch (e) {
+      state.suite = '';
+      return api('/api/heatmap');
+    }
+  }
+
+  let [data, suitesData] = await Promise.all([loadHeatmap(state.suite), api('/api/suites')]);
+  let summaryData = null;
+  let byId = modelById(data);
+  const requestedModels = (params.get('models') || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const unique = [];
+  for (const id of requestedModels) {
+    if (byId.has(id) && !unique.includes(id)) unique.push(id);
+  }
+  state.models = unique.slice(0, MAX_COMPARE_MODELS);
+  if (!state.models.length) state.models = topModelsByAverage(data, 3);
+  if (!state.models.includes(state.baseline)) state.baseline = state.models[0] || '';
+
+  clearNode(wrap);
+
+  const title = el('div', {class:'detail-header'});
+  const titleGroup = el('div', {class:'detail-title-group'});
+  const titleRow = el('div', {class:'detail-title-row'});
+  titleRow.appendChild(el('h1', null, 'Compare Models'));
+  titleGroup.appendChild(titleRow);
+  titleGroup.appendChild(el('div', {class:'detail-meta'}, 'Primary scores across selected benchmarks'));
+  title.appendChild(titleGroup);
+  wrap.appendChild(title);
+
+  const shell = el('div', {class:'compare-shell'});
+  wrap.appendChild(shell);
+
+  const toolbar = el('div', {class:'compare-toolbar'});
+  shell.appendChild(toolbar);
+
+  const controlsRow = el('div', {class:'compare-toolbar-row'});
+  toolbar.appendChild(controlsRow);
+
+  const addSelect = document.createElement('select');
+  addSelect.style.minWidth = '240px';
+  controlsRow.appendChild(addSelect);
+
+  controlsRow.appendChild(el('label', null, 'Baseline'));
+  const baselineSelect = document.createElement('select');
+  baselineSelect.style.minWidth = '180px';
+  controlsRow.appendChild(baselineSelect);
+
+  controlsRow.appendChild(el('label', null, 'Suite'));
+  const suiteSelect = document.createElement('select');
+  const allSuitesOpt = el('option', {value:''}, 'All Benchmarks');
+  suiteSelect.appendChild(allSuitesOpt);
+  for (const s of suitesData.suites || []) {
+    suiteSelect.appendChild(el('option', {value:s.suite_id}, s.display_name + ' (' + s.dataset_names.length + ')'));
+  }
+  suiteSelect.value = state.suite;
+  controlsRow.appendChild(suiteSelect);
+
+  controlsRow.appendChild(el('label', null, 'Benchmark'));
+  const benchmarkSelect = document.createElement('select');
+  benchmarkSelect.style.minWidth = '200px';
+  controlsRow.appendChild(benchmarkSelect);
+
+  const commonLabel = el('label', {style:'display:inline-flex;align-items:center;gap:6px;cursor:pointer;'});
+  const commonToggle = document.createElement('input');
+  commonToggle.type = 'checkbox';
+  commonToggle.checked = state.commonOnly;
+  commonLabel.appendChild(commonToggle);
+  commonLabel.appendChild(document.createTextNode('Common only'));
+  controlsRow.appendChild(commonLabel);
+
+  controlsRow.appendChild(el('label', null, 'Preset'));
+  const presetSelect = document.createElement('select');
+  presetSelect.style.minWidth = '170px';
+  controlsRow.appendChild(presetSelect);
+  const savePresetBtn = el('button', {class:'btn btn-secondary btn-small', type:'button'}, 'Save preset');
+  controlsRow.appendChild(savePresetBtn);
+
+  const selectedRow = el('div', {class:'compare-toolbar-row'});
+  const selectedWrap = el('div', {class:'compare-selected'});
+  selectedRow.appendChild(selectedWrap);
+  toolbar.appendChild(selectedRow);
+
+  const summary = el('div', {class:'compare-summary'});
+  shell.appendChild(summary);
+
+  const chartPanel = el('div', {class:'compare-chart-panel'});
+  shell.appendChild(chartPanel);
+  const chartHead = el('div', {class:'compare-chart-head'});
+  const chartTitle = el('div', {class:'section-head', style:'margin:0;border:0;padding:0;'}, 'Benchmark Scores');
+  chartHead.appendChild(chartTitle);
+  const modeTabs = el('div', {class:'compare-mode-tabs'});
+  const barsBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Grouped bars');
+  const deltaBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Delta bars');
+  const radarBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Radar');
+  const curvesBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Curves');
+  modeTabs.appendChild(barsBtn);
+  modeTabs.appendChild(deltaBtn);
+  modeTabs.appendChild(radarBtn);
+  modeTabs.appendChild(curvesBtn);
+  chartHead.appendChild(modeTabs);
+  chartPanel.appendChild(chartHead);
+  const chartMount = el('div', {class:'compare-big-chart'});
+  chartPanel.appendChild(chartMount);
+
+  const tablePanel = el('div', {class:'compare-table-panel'});
+  shell.appendChild(tablePanel);
+
+  let compareChart = null;
+  const PRESET_KEY = 'eval360-compare-presets';
+
+  function loadPresets() {
+    try {
+      const raw = localStorage.getItem(PRESET_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function savePresets(presets) {
+    try { localStorage.setItem(PRESET_KEY, JSON.stringify(presets.slice(0, 20))); } catch (e) {}
+  }
+
+  function populatePresetSelect() {
+    const presets = loadPresets();
+    clearNode(presetSelect);
+    presetSelect.appendChild(el('option', {value:''}, presets.length ? 'Load preset...' : 'No presets'));
+    presets.forEach((p, idx) => {
+      presetSelect.appendChild(el('option', {value:String(idx)}, p.name || ('Preset ' + (idx + 1))));
+    });
+  }
+
+  function destroyCompareChart() {
+    if (!compareChart) return;
+    _charts = _charts.filter(c => c !== compareChart);
+    try { compareChart.destroy(); } catch (e) {}
+    compareChart = null;
+  }
+
+  async function loadSummary() {
+    if (!state.models.length) {
+      summaryData = {models: [], datasets: [], baseline_model_id: '', matrix: {}, coverage: {}, categories: {}};
+      return summaryData;
+    }
+    const p = new URLSearchParams();
+    p.set('models', state.models.join(','));
+    if (state.baseline) p.set('baseline', state.baseline);
+    if (state.suite) p.set('suite_id', state.suite);
+    if (state.commonOnly) p.set('common_only', 'true');
+    if (state.benchmark) p.set('benchmark', state.benchmark);
+    summaryData = await api('/api/compare/summary?' + p.toString());
+    return summaryData;
+  }
+
+  function currentDatasets() {
+    return summaryData ? (summaryData.datasets || []) : [];
+  }
+
+  function tableModelOrder() {
+    if (!state.baseline) return [...state.models];
+    return [state.baseline, ...state.models.filter(mid => mid !== state.baseline)];
+  }
+
+  async function updateUrlAndRender() {
+    if (!state.models.includes(state.baseline)) state.baseline = state.models[0] || '';
+    setCompareUrl(state);
+    await renderAll();
+  }
+
+  function populateAddSelect() {
+    clearNode(addSelect);
+    const placeholder = el('option', {value:''}, state.models.length >= MAX_COMPARE_MODELS ? 'Compare list full' : 'Add model...');
+    addSelect.appendChild(placeholder);
+    for (const m of data.models || []) {
+      if (state.models.includes(m.model_id)) continue;
+      const opt = el('option', {value:m.model_id}, m.display_name + ' (' + m.model_type + ')');
+      addSelect.appendChild(opt);
+    }
+    addSelect.value = '';
+    addSelect.disabled = state.models.length >= MAX_COMPARE_MODELS;
+  }
+
+  function populateBaselineSelect() {
+    clearNode(baselineSelect);
+    for (const id of state.models) {
+      const m = byId.get(id);
+      if (!m) continue;
+      baselineSelect.appendChild(el('option', {value:id}, m.display_name));
+    }
+    baselineSelect.value = state.baseline;
+    baselineSelect.disabled = state.models.length === 0;
+  }
+
+  function populateBenchmarkSelect() {
+    const prev = state.benchmark;
+    clearNode(benchmarkSelect);
+    benchmarkSelect.appendChild(el('option', {value:''}, 'All Benchmarks'));
+    for (const ds of orderedDatasetsFromHeatmap(data)) {
+      benchmarkSelect.appendChild(el('option', {value:ds}, ds));
+    }
+    if (prev && orderedDatasetsFromHeatmap(data).includes(prev)) {
+      state.benchmark = prev;
+    } else {
+      state.benchmark = '';
+    }
+    benchmarkSelect.value = state.benchmark;
+  }
+
+  function renderSelectedChips() {
+    clearNode(selectedWrap);
+    if (!state.models.length) {
+      selectedWrap.appendChild(el('span', {style:'color:var(--muted);font-size:13px;'}, 'No models selected'));
+      return;
+    }
+    for (const id of state.models) {
+      const m = byId.get(id);
+      if (!m) continue;
+      const chip = el('span', {class:'compare-chip'});
+      chip.appendChild(el('span', {class:'compare-chip-swatch', style:'background:' + modelColor(id)}));
+      chip.appendChild(el('span', {class:'compare-chip-name'}, m.display_name));
+      if (id === state.baseline) {
+        chip.appendChild(el('span', {class:'badge', style:'background:var(--accent-dim);color:var(--accent);'}, 'baseline'));
+      }
+      const remove = el('button', {class:'compare-chip-remove', type:'button', title:'Remove'}, '\u00d7');
+      remove.addEventListener('click', () => {
+        state.models = state.models.filter(mid => mid !== id);
+        if (state.baseline === id) state.baseline = state.models[0] || '';
+        updateUrlAndRender();
+      });
+      chip.appendChild(remove);
+      selectedWrap.appendChild(chip);
+    }
+  }
+
+  function renderSummary(datasets) {
+    clearNode(summary);
+    const selectedCount = state.models.length;
+    let missing = 0;
+    let present = 0;
+    for (const mid of state.models) {
+      for (const ds of datasets) {
+        if (completedScore(summaryData, mid, ds) == null) missing++;
+        else present++;
+      }
+    }
+
+    let bestModel = null;
+    let bestAvg = null;
+    for (const mid of state.models) {
+      const avg = averageScoreForModel(summaryData, mid, datasets);
+      if (avg != null && (bestAvg == null || avg > bestAvg)) {
+        bestAvg = avg;
+        bestModel = byId.get(mid);
+      }
+    }
+
+    let bestGain = null;
+    if (state.baseline) {
+      for (const mid of state.models) {
+        if (mid === state.baseline) continue;
+        for (const ds of datasets) {
+          const base = completedScore(summaryData, state.baseline, ds);
+          const score = completedScore(summaryData, mid, ds);
+          if (base == null || score == null) continue;
+          const delta = score - base;
+          if (!bestGain || delta > bestGain.delta) bestGain = {delta, model: byId.get(mid), dataset: ds};
+        }
+      }
+    }
+
+    const items = [
+      [String(selectedCount), 'Selected models'],
+      [String(datasets.length), state.commonOnly ? 'Common benchmarks' : 'Benchmarks shown'],
+      [bestModel ? bestModel.display_name + ' ' + bestAvg.toFixed(3) : '\u2014', 'Best average'],
+      [bestGain ? signed(bestGain.delta) + ' ' + bestGain.model.display_name : (missing ? String(missing) : '0'), bestGain ? 'Biggest gain' : 'Missing cells'],
+    ];
+    for (const [value, label] of items) {
+      const item = el('div', {class:'compare-stat'});
+      item.appendChild(el('div', {class:'compare-stat-value'}, value));
+      item.appendChild(el('div', {class:'compare-stat-label'}, label + (label === 'Missing cells' ? ' · ' + present + ' present' : '')));
+      summary.appendChild(item);
+    }
+  }
+
+  async function renderChart(datasets) {
+    destroyCompareChart();
+    clearNode(chartMount);
+    barsBtn.classList.toggle('active', state.mode === 'bars');
+    deltaBtn.classList.toggle('active', state.mode === 'delta');
+    radarBtn.classList.toggle('active', state.mode === 'radar');
+    curvesBtn.classList.toggle('active', state.mode === 'curves');
+    chartTitle.textContent = state.mode === 'delta'
+      ? 'Baseline Delta'
+      : state.mode === 'radar'
+        ? 'Capability Profile'
+        : 'Benchmark Scores';
+
+    if (!state.models.length || !datasets.length) {
+      chartMount.appendChild(el('div', {class:'compare-empty'}, 'No comparable benchmark data.'));
+      return;
+    }
+    if (state.mode === 'delta' && (!state.baseline || state.models.length < 2)) {
+      chartMount.appendChild(el('div', {class:'compare-empty'}, 'Select at least two models for delta bars.'));
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    chartMount.appendChild(canvas);
+    const cc = chartColors();
+
+    if (state.mode === 'delta') {
+      const chartDatasets = state.models.filter(mid => mid !== state.baseline).map(mid => {
+        const deltas = datasets.map(ds => {
+          const base = completedScore(summaryData, state.baseline, ds);
+          const score = completedScore(summaryData, mid, ds);
+          return base == null || score == null ? null : score - base;
+        });
+        return {
+          label: byId.get(mid)?.display_name || mid,
+          data: deltas,
+          backgroundColor: deltas.map(v => v == null ? 'rgba(128,128,128,0.22)' : (v >= 0 ? cc.green + 'aa' : cc.red + 'aa')),
+          borderColor: deltas.map(v => v == null ? 'rgba(128,128,128,0.4)' : (v >= 0 ? cc.green : cc.red)),
+          borderWidth: 1,
+        };
+      });
+      compareChart = new Chart(canvas, {
+        type: 'bar',
+        data: {labels: datasets, datasets: chartDatasets},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: {mode:'index', intersect:false},
+          scales: {
+            x: {ticks:{color:cc.tick, maxRotation:45, minRotation:0, font:{size:11}}, grid:{display:false}},
+            y: {ticks:{color:cc.tick, font:{size:11,family:'JetBrains Mono'}, callback:v => signed(v)}, grid:{color:cc.grid}, zeroLineColor:cc.grid},
+          },
+          plugins: {
+            legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
+            tooltip: {
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
+              callbacks: { label(ctx) { return ctx.dataset.label + ': ' + (ctx.raw == null ? 'missing' : signed(ctx.raw)); } },
+            },
+          },
+        },
+      });
+      compareChart.$compareDeltaValues = chartDatasets.map(d => d.data);
+    } else if (state.mode === 'radar') {
+      const axes = [];
+      const categories = summaryData.categories || {};
+      const catNames = Object.keys(categories).sort();
+      if (catNames.length) {
+        for (const cat of catNames) {
+          const catDs = (categories[cat] || []).filter(ds => datasets.includes(ds));
+          if (catDs.length) axes.push({label: cat, datasets: catDs});
+        }
+      }
+      if (!axes.length) {
+        for (const ds of datasets.slice(0, 12)) axes.push({label: ds, datasets: [ds]});
+      }
+      const chartDatasets = state.models.map(mid => {
+        const color = modelColor(mid);
+        return {
+          label: byId.get(mid)?.display_name || mid,
+          data: axes.map(axis => averageScoreForModel(summaryData, mid, axis.datasets)),
+          borderColor: color,
+          backgroundColor: color + '22',
+          pointBackgroundColor: color,
+          pointBorderColor: color,
+          borderWidth: 2,
+        };
+      });
+      compareChart = new Chart(canvas, {
+        type: 'radar',
+        data: {labels: axes.map(a => a.label), datasets: chartDatasets},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            r: {
+              min: 0, max: 1,
+              angleLines: {color: cc.grid},
+              grid: {color: cc.grid},
+              pointLabels: {color: cc.tick, font: {size: 11}},
+              ticks: {color: cc.tick, backdropColor: 'transparent', font: {size: 10, family:'JetBrains Mono'}},
+            },
+          },
+          plugins: {
+            legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
+            tooltip: {
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
+              callbacks: { label(ctx) { return ctx.dataset.label + ': ' + (ctx.raw == null ? 'missing' : formatScore(ctx.raw)); } },
+            },
+          },
+        },
+      });
+    } else if (state.mode === 'curves') {
+      const curveDs = state.benchmark || datasets[0];
+      chartTitle.textContent = 'Training Curves · ' + curveDs;
+      const compareModels = state.models.join(',');
+      const cData = await api('/api/compare?models=' + encodeURIComponent(compareModels) + '&dataset=' + encodeURIComponent(curveDs));
+      const allSteps = [];
+      for (const mEntry of cData.models || []) {
+        for (const p of mEntry.data_points || []) {
+          if (p.training_step != null) allSteps.push(p.training_step);
+        }
+      }
+      const xMin = allSteps.length ? Math.min(...allSteps) : 0;
+      const xMax = allSteps.length ? Math.max(...allSteps) : 1;
+      const chartDatasets = (cData.models || []).map(mEntry => {
+        const color = modelColor(mEntry.model_id);
+        if (mEntry.model_type === 'baseline' && mEntry.data_points.length > 0) {
+          const val = mEntry.data_points[0].metric_value;
+          return {
+            label: mEntry.display_name,
+            data: [{x:xMin, y:val}, {x:xMax, y:val}],
+            borderColor: color,
+            backgroundColor: color + '22',
+            borderDash: [6, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0,
+          };
+        }
+        return {
+          label: mEntry.display_name,
+          data: (mEntry.data_points || []).map(p => ({x: p.training_step ?? xMin, y: p.metric_value})),
+          borderColor: color,
+          backgroundColor: color + '22',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.25,
+        };
+      });
+      compareChart = new Chart(canvas, {
+        type: 'line',
+        data: {datasets: chartDatasets},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: {mode:'index', intersect:false},
+          scales: {
+            x: {type:'linear', ticks:{color:cc.tick, maxTicksLimit:6, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid}},
+            y: {min:0, max:1, ticks:{color:cc.tick, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid}},
+          },
+          plugins: {
+            legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
+            tooltip: {
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
+              callbacks: { label(ctx) { const r = ctx.raw; return ctx.dataset.label + ': ' + formatScore(r.y) + (r.x != null ? ' (step ' + r.x + ')' : ''); } },
+            },
+          },
+        },
+      });
+    } else {
+      chartTitle.textContent = 'Benchmark Scores';
+      const chartDatasets = state.models.map(mid => {
+        const color = modelColor(mid);
+        return {
+          label: byId.get(mid)?.display_name || mid,
+          data: datasets.map(ds => completedScore(summaryData, mid, ds)),
+          backgroundColor: color + 'aa',
+          borderColor: color,
+          borderWidth: 1,
+          borderRadius: 3,
+        };
+      });
+      compareChart = new Chart(canvas, {
+        type: 'bar',
+        data: {labels: datasets, datasets: chartDatasets},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: {mode:'index', intersect:false},
+          scales: {
+            x: {ticks:{color:cc.tick, maxRotation:45, minRotation:0, font:{size:11}}, grid:{display:false}},
+            y: {min:0, max:1, ticks:{color:cc.tick, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid}},
+          },
+          plugins: {
+            legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
+            tooltip: {
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
+              callbacks: { label(ctx) { return ctx.dataset.label + ': ' + (ctx.raw == null ? 'missing' : formatScore(ctx.raw)); } },
+            },
+          },
+        },
+      });
+    }
+    _charts.push(compareChart);
+  }
+
+  function renderTable(datasets) {
+    clearNode(tablePanel);
+    if (!state.models.length || !datasets.length) {
+      tablePanel.appendChild(el('div', {class:'compare-empty'}, 'No comparable benchmark data.'));
+      return;
+    }
+    const modelOrder = tableModelOrder();
+    const table = document.createElement('table');
+    table.className = 'compare-table';
+    const thead = document.createElement('thead');
+    const hrow = document.createElement('tr');
+    hrow.appendChild(el('th', null, 'Benchmark'));
+    hrow.appendChild(el('th', null, 'Coverage'));
+    for (const mid of modelOrder) {
+      const label = (byId.get(mid)?.display_name || mid) + (mid === state.baseline ? ' · Baseline' : '');
+      hrow.appendChild(el('th', null, label));
+    }
+    thead.appendChild(hrow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const ds of datasets) {
+      const tr = document.createElement('tr');
+      tr.appendChild(el('td', null, ds));
+      const present = state.models.filter(mid => completedScore(summaryData, mid, ds) != null).length;
+      tr.appendChild(el('td', {style:'color:var(--muted);font-family:var(--font-mono);'}, present + '/' + state.models.length));
+      const base = state.baseline ? completedScore(summaryData, state.baseline, ds) : null;
+      for (const mid of modelOrder) {
+        const td = document.createElement('td');
+        const v = completedScore(summaryData, mid, ds);
+        if (v == null) {
+          td.appendChild(el('span', {class:'compare-missing'}, '\u2014'));
+        } else {
+          const score = el('span', {class:'compare-score'}, formatScore(v));
+          score.style.color = scoreColor(v);
+          td.appendChild(score);
+          if (mid !== state.baseline && base != null) {
+            const delta = summaryData.matrix?.[mid]?.[ds]?.delta_vs_baseline ?? (v - base);
+            const deltaSpan = el('span', {class:'compare-delta ' + (delta >= 0 ? 'gap-positive' : 'gap-negative')}, signed(delta));
+            td.appendChild(deltaSpan);
+          }
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    tablePanel.appendChild(table);
+  }
+
+  async function renderAll() {
+    byId = modelById(data);
+    state.models = state.models.filter(id => byId.has(id)).slice(0, MAX_COMPARE_MODELS);
+    if (!state.models.includes(state.baseline)) state.baseline = state.models[0] || '';
+    populateAddSelect();
+    populateBaselineSelect();
+    populateBenchmarkSelect();
+    commonToggle.checked = state.commonOnly;
+    suiteSelect.value = state.suite;
+    setCompareUrl(state);
+    await loadSummary();
+    renderSelectedChips();
+    const datasets = currentDatasets();
+    renderSummary(datasets);
+    await renderChart(datasets);
+    renderTable(datasets);
+  }
+
+  addSelect.addEventListener('change', async () => {
+    const id = addSelect.value;
+    if (!id || state.models.includes(id) || state.models.length >= MAX_COMPARE_MODELS) return;
+    state.models.push(id);
+    if (!state.baseline) state.baseline = id;
+    await updateUrlAndRender();
+  });
+
+  baselineSelect.addEventListener('change', async () => {
+    state.baseline = baselineSelect.value;
+    await updateUrlAndRender();
+  });
+
+  suiteSelect.addEventListener('change', async () => {
+    state.suite = suiteSelect.value;
+    data = await loadHeatmap(state.suite);
+    await updateUrlAndRender();
+  });
+
+  benchmarkSelect.addEventListener('change', async () => {
+    state.benchmark = benchmarkSelect.value;
+    await updateUrlAndRender();
+  });
+
+  commonToggle.addEventListener('change', async () => {
+    state.commonOnly = commonToggle.checked;
+    await updateUrlAndRender();
+  });
+
+  barsBtn.addEventListener('click', async () => {
+    state.mode = 'bars';
+    await updateUrlAndRender();
+  });
+
+  deltaBtn.addEventListener('click', async () => {
+    state.mode = 'delta';
+    await updateUrlAndRender();
+  });
+
+  radarBtn.addEventListener('click', async () => {
+    state.mode = 'radar';
+    await updateUrlAndRender();
+  });
+
+  curvesBtn.addEventListener('click', async () => {
+    state.mode = 'curves';
+    await updateUrlAndRender();
+  });
+
+  savePresetBtn.addEventListener('click', () => {
+    const name = prompt('Preset name:', state.models.map(id => byId.get(id)?.display_name || id).join(' vs '));
+    if (!name) return;
+    const presets = loadPresets().filter(p => p.name !== name);
+    presets.unshift({
+      name,
+      state: {
+        models: [...state.models],
+        baseline: state.baseline,
+        suite: state.suite,
+        commonOnly: state.commonOnly,
+        benchmark: state.benchmark,
+        mode: state.mode,
+      },
+      saved_at: new Date().toISOString(),
+    });
+    savePresets(presets);
+    populatePresetSelect();
+  });
+
+  presetSelect.addEventListener('change', async () => {
+    const idx = Number(presetSelect.value);
+    const preset = loadPresets()[idx];
+    if (!preset || !preset.state) return;
+    state.models = [...(preset.state.models || [])].slice(0, MAX_COMPARE_MODELS);
+    state.baseline = preset.state.baseline || state.models[0] || '';
+    state.suite = preset.state.suite || '';
+    state.commonOnly = !!preset.state.commonOnly;
+    state.benchmark = preset.state.benchmark || '';
+    state.mode = preset.state.mode || 'bars';
+    data = await loadHeatmap(state.suite);
+    await updateUrlAndRender();
+  });
+
+  populatePresetSelect();
+  setCompareUrl(state);
+  await renderAll();
 }
 
 /* ===================================================================
@@ -2534,6 +3640,49 @@ async function viewLeaderboard(app) {
   wrap.appendChild(tableContainer);
 
   let currentData = initialData;
+  const selectedCompare = new Set();
+
+  const compareTray = el('div', {class:'compare-tray'});
+  const trayCount = el('span', {class:'compare-tray-count'}, '0 selected');
+  const trayMeta = el('span', {style:'color:var(--muted);font-size:12px;'}, 'Ready to compare');
+  const trayCompareBtn = el('button', {class:'btn btn-small'}, 'Compare selected');
+  const trayClearBtn = el('button', {class:'btn btn-secondary btn-small'}, 'Clear');
+  compareTray.appendChild(trayCount);
+  compareTray.appendChild(trayMeta);
+  compareTray.appendChild(trayCompareBtn);
+  compareTray.appendChild(trayClearBtn);
+  wrap.appendChild(compareTray);
+
+  function selectedIdsInCurrentOrder() {
+    return (currentData.models || []).map(m => m.model_id).filter(id => selectedCompare.has(id));
+  }
+
+  function updateCompareTray() {
+    const ids = selectedIdsInCurrentOrder();
+    trayCount.textContent = ids.length + ' selected';
+    trayMeta.textContent = ids.length >= MAX_COMPARE_MODELS ? 'Compare list full' : 'Up to ' + MAX_COMPARE_MODELS + ' models';
+    compareTray.classList.toggle('visible', ids.length > 0);
+  }
+
+  trayCompareBtn.addEventListener('click', () => {
+    const ids = selectedIdsInCurrentOrder();
+    if (!ids.length) return;
+    const state = {
+      models: ids,
+      baseline: ids[0],
+      suite: lbSuiteSelect.value,
+      commonOnly: false,
+      benchmark: sortSelect.value,
+      mode: 'bars',
+    };
+    location.hash = buildCompareHash(state);
+  });
+
+  trayClearBtn.addEventListener('click', () => {
+    selectedCompare.clear();
+    renderPivot(currentData, sortSelect.value);
+    updateCompareTray();
+  });
 
   function populateSortSelect(data) {
     clearNode(sortSelect);
@@ -2585,6 +3734,19 @@ async function viewLeaderboard(app) {
       bestPerDs[ds] = best;
     }
 
+    // Sort models
+    let sorted = [...data.models];
+    if (sortDs) {
+      sorted.sort((a, b) => {
+        const entryA = (data.matrix[a.model_id] || {})[sortDs];
+        const entryB = (data.matrix[b.model_id] || {})[sortDs];
+        const va = entryA && entryA.score != null ? entryA.score : -1;
+        const vb = entryB && entryB.score != null ? entryB.score : -1;
+        return vb - va;
+      });
+    }
+    const visibleIds = sorted.map(m => m.model_id);
+
     const pivotWrap = el('div', {class:'pivot-wrap'});
     const table = document.createElement('table');
     table.className = 'pivot';
@@ -2596,7 +3758,7 @@ async function viewLeaderboard(app) {
       const catRow = document.createElement('tr');
       catRow.className = 'type-separator';
       const catModelTd = document.createElement('td');
-      catModelTd.colSpan = 2;
+      catModelTd.colSpan = 3;
       catRow.appendChild(catModelTd);
       for (const cat of catOrder) {
         const catTd = document.createElement('td');
@@ -2614,6 +3776,27 @@ async function viewLeaderboard(app) {
     }
 
     const hRow = document.createElement('tr');
+    const selectAllTh = el('th', {class:'compare-select-cell'});
+    const selectAll = document.createElement('input');
+    selectAll.type = 'checkbox';
+    selectAll.className = 'model-compare-check';
+    const visibleSelected = visibleIds.filter(id => selectedCompare.has(id));
+    selectAll.checked = visibleIds.length > 0 && visibleSelected.length === visibleIds.length;
+    selectAll.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visibleIds.length;
+    selectAll.addEventListener('change', () => {
+      if (selectAll.checked) {
+        for (const id of visibleIds) {
+          if (selectedCompare.size >= MAX_COMPARE_MODELS) break;
+          selectedCompare.add(id);
+        }
+      } else {
+        for (const id of visibleIds) selectedCompare.delete(id);
+      }
+      renderPivot(data, sortDs);
+      updateCompareTray();
+    });
+    selectAllTh.appendChild(selectAll);
+    hRow.appendChild(selectAllTh);
     hRow.appendChild(el('th', {style:'text-align:left'}, 'Model'));
     hRow.appendChild(el('th', null, 'Type'));
     for (const ds of orderedDatasets) {
@@ -2624,21 +3807,26 @@ async function viewLeaderboard(app) {
     thead.appendChild(hRow);
     table.appendChild(thead);
 
-    // Sort models
-    let sorted = [...data.models];
-    if (sortDs) {
-      sorted.sort((a, b) => {
-        const entryA = (data.matrix[a.model_id] || {})[sortDs];
-        const entryB = (data.matrix[b.model_id] || {})[sortDs];
-        const va = entryA && entryA.score != null ? entryA.score : -1;
-        const vb = entryB && entryB.score != null ? entryB.score : -1;
-        return vb - va;
-      });
-    }
-
     const tbody = document.createElement('tbody');
     for (const m of sorted) {
       const tr = document.createElement('tr');
+      if (selectedCompare.has(m.model_id)) tr.classList.add('compare-selected-row');
+
+      const selectTd = el('td', {class:'compare-select-cell'});
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'model-compare-check';
+      check.checked = selectedCompare.has(m.model_id);
+      check.disabled = !check.checked && selectedCompare.size >= MAX_COMPARE_MODELS;
+      check.addEventListener('click', e => e.stopPropagation());
+      check.addEventListener('change', () => {
+        if (check.checked) selectedCompare.add(m.model_id);
+        else selectedCompare.delete(m.model_id);
+        renderPivot(data, sortDs);
+        updateCompareTray();
+      });
+      selectTd.appendChild(check);
+      tr.appendChild(selectTd);
 
       const nameTd = document.createElement('td');
       nameTd.className = 'model-col';
@@ -2666,6 +3854,7 @@ async function viewLeaderboard(app) {
     table.appendChild(tbody);
     pivotWrap.appendChild(table);
     tableContainer.appendChild(pivotWrap);
+    updateCompareTray();
   }
 
   populateSortSelect(initialData);

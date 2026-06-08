@@ -477,6 +477,140 @@ async def compare_models(
     return {"dataset": dataset, "models": list(result.values())}
 
 
+@app.get("/api/compare/summary")
+async def compare_summary(
+    models: str = Query(..., description="Comma-separated model_ids"),
+    suite_id: str | None = Query(None),
+    benchmark: str | None = Query(None),
+    common_only: bool = Query(False),
+    baseline: str | None = Query(None),
+):
+    model_ids = [m.strip() for m in models.split(",") if m.strip()]
+    if not model_ids:
+        return JSONResponse({"error": "No models specified"}, status_code=400)
+
+    dataset_filter = None
+    if suite_id:
+        suite = await db.fetchrow("SELECT * FROM eval_suites WHERE suite_id = $1", suite_id)
+        if not suite:
+            return JSONResponse({"error": "Suite not found"}, status_code=404)
+        dataset_filter = list(suite["dataset_names"])
+    if benchmark:
+        dataset_filter = [benchmark] if dataset_filter is None else [d for d in dataset_filter if d == benchmark]
+
+    placeholders = ", ".join(f"${i+1}" for i in range(len(model_ids)))
+    rows = await db.fetch(
+        f"""
+        WITH ranked AS (
+            SELECT m.model_id, m.display_name, m.model_type, m.owner, m.param_count,
+                   e.dataset_name, e.metric_name, e.metric_value, e.checkpoint_id,
+                   e.eval_run_id, e.sample_count, e.ci_lower, e.ci_upper, e.stderr,
+                   c.training_step,
+                   COALESCE(er.status, 'completed') AS run_status,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY m.model_id, e.dataset_name
+                       ORDER BY e.metric_value DESC NULLS LAST
+                   ) AS rn
+            FROM models m
+            JOIN checkpoints c ON c.model_id = m.model_id
+            JOIN eval_results e ON e.checkpoint_id = c.checkpoint_id
+            LEFT JOIN eval_runs er ON er.eval_run_id = e.eval_run_id
+            WHERE e.is_primary = TRUE
+              AND m.model_id IN ({placeholders})
+        )
+        SELECT * FROM ranked WHERE rn = 1
+        ORDER BY model_type DESC, model_id, dataset_name
+        """,
+        *model_ids,
+    )
+
+    if dataset_filter is not None:
+        allowed = set(dataset_filter)
+        rows = [r for r in rows if r["dataset_name"] in allowed]
+
+    model_rows = await db.fetch(
+        f"""
+        SELECT model_id, display_name, model_type, owner, param_count, is_pinned
+        FROM models
+        WHERE model_id IN ({placeholders})
+        """,
+        *model_ids,
+    )
+    model_lookup = {r["model_id"]: dict(r) for r in model_rows}
+    valid_model_ids = [mid for mid in model_ids if mid in model_lookup]
+    if not valid_model_ids:
+        return JSONResponse({"error": "No valid models specified"}, status_code=400)
+    models_out = [model_lookup[mid] for mid in valid_model_ids]
+
+    if dataset_filter is not None:
+        datasets = list(dataset_filter)
+    else:
+        datasets = sorted({r["dataset_name"] for r in rows})
+
+    matrix: dict[str, dict] = {mid: {} for mid in valid_model_ids}
+    for r in rows:
+        mid = r["model_id"]
+        if mid not in matrix:
+            matrix[mid] = {}
+        matrix[mid][r["dataset_name"]] = {
+            "score": round(r["metric_value"], 4) if r["metric_value"] is not None else None,
+            "delta_vs_baseline": None,
+            "checkpoint_id": r["checkpoint_id"],
+            "training_step": r["training_step"],
+            "metric_name": r["metric_name"],
+            "sample_count": r["sample_count"],
+            "ci_lower": r["ci_lower"],
+            "ci_upper": r["ci_upper"],
+            "stderr": r["stderr"],
+            "status": r["run_status"],
+            "eval_run_id": r["eval_run_id"],
+        }
+
+    if common_only and len(model_ids) > 1:
+        datasets = [
+            ds for ds in datasets
+            if all(matrix.get(mid, {}).get(ds, {}).get("score") is not None for mid in valid_model_ids)
+        ]
+
+    baseline_id = baseline if baseline in valid_model_ids else (valid_model_ids[0] if valid_model_ids else None)
+    if baseline_id:
+        for ds in datasets:
+            base = matrix.get(baseline_id, {}).get(ds, {}).get("score")
+            for mid in valid_model_ids:
+                cell = matrix.get(mid, {}).get(ds)
+                if not cell or cell.get("score") is None or base is None:
+                    continue
+                cell["delta_vs_baseline"] = round(cell["score"] - base, 6)
+
+    coverage = {}
+    for mid in valid_model_ids:
+        present = [
+            ds for ds in datasets
+            if matrix.get(mid, {}).get(ds, {}).get("score") is not None
+        ]
+        missing = [ds for ds in datasets if ds not in present]
+        coverage[mid] = {"present": len(present), "missing": len(missing), "total": len(datasets), "missing_datasets": missing}
+
+    cat_rows = await db.fetch("SELECT dataset_name, category FROM benchmark_metadata")
+    categories: dict[str, list[str]] = {}
+    dataset_set = set(datasets)
+    for r in cat_rows:
+        if r["dataset_name"] not in dataset_set:
+            continue
+        categories.setdefault(r["category"], []).append(r["dataset_name"])
+
+    return {
+        "models": models_out,
+        "datasets": datasets,
+        "baseline_model_id": baseline_id,
+        "suite_id": suite_id,
+        "common_only": common_only,
+        "matrix": matrix,
+        "coverage": coverage,
+        "categories": categories,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Heatmap (all models × all datasets matrix)
 # ---------------------------------------------------------------------------

@@ -650,6 +650,100 @@ async def compare_models(
     return resp
 
 
+@app.get("/api/compare/summary")
+async def compare_summary(
+    models: str = Query(..., description="Comma-separated model_ids"),
+    suite_id: str | None = Query(None),
+    benchmark: str | None = Query(None),
+    common_only: bool = Query(False),
+    baseline: str | None = Query(None),
+):
+    model_ids = [m.strip() for m in models.split(",") if m.strip()]
+    valid_model_ids = [mid for mid in model_ids if any(m["model_id"] == mid for m in MODELS)]
+    if not valid_model_ids:
+        return JSONResponse({"error": "No models specified"}, status_code=400)
+
+    all_datasets = sorted({e["dataset_name"] for e in EVAL_RESULTS if e["is_primary"]}
+                          | {r["dataset_name"] for r in EVAL_RUNS})
+    if suite_id:
+        suite = next((s for s in EVAL_SUITES if s["suite_id"] == suite_id), None)
+        if suite is None:
+            return JSONResponse({"error": "Suite not found"}, status_code=404)
+        suite_ds = set(suite["dataset_names"])
+        datasets = [ds for ds in all_datasets if ds in suite_ds]
+    else:
+        datasets = all_datasets
+    if benchmark:
+        datasets = [ds for ds in datasets if ds == benchmark]
+
+    model_lookup = {m["model_id"]: m for m in MODELS}
+    cp_lookup = {c["checkpoint_id"]: c for c in CHECKPOINTS}
+    matrix: dict[str, dict] = {mid: {} for mid in valid_model_ids}
+
+    for mid in valid_model_ids:
+        cp_ids = {c["checkpoint_id"] for c in CHECKPOINTS if c["model_id"] == mid}
+        best: dict[str, dict] = {}
+        for e in EVAL_RESULTS:
+            if e["checkpoint_id"] not in cp_ids or not e["is_primary"] or e["dataset_name"] not in datasets:
+                continue
+            ds = e["dataset_name"]
+            if ds not in best or e["metric_value"] > best[ds]["metric_value"]:
+                best[ds] = e
+        for ds, e in best.items():
+            cp = cp_lookup[e["checkpoint_id"]]
+            matrix[mid][ds] = {
+                "score": round(e["metric_value"], 4),
+                "delta_vs_baseline": None,
+                "checkpoint_id": e["checkpoint_id"],
+                "training_step": cp["training_step"],
+                "metric_name": e["metric_name"],
+                "sample_count": e.get("sample_count"),
+                "ci_lower": e.get("ci_lower"),
+                "ci_upper": e.get("ci_upper"),
+                "stderr": e.get("stderr"),
+                "status": "completed",
+                "eval_run_id": e.get("eval_run_id"),
+            }
+
+    if common_only and len(valid_model_ids) > 1:
+        datasets = [
+            ds for ds in datasets
+            if all(matrix.get(mid, {}).get(ds, {}).get("score") is not None for mid in valid_model_ids)
+        ]
+
+    baseline_id = baseline if baseline in valid_model_ids else valid_model_ids[0]
+    for ds in datasets:
+        base = matrix.get(baseline_id, {}).get(ds, {}).get("score")
+        for mid in valid_model_ids:
+            cell = matrix.get(mid, {}).get(ds)
+            if not cell or cell.get("score") is None or base is None:
+                continue
+            cell["delta_vs_baseline"] = round(cell["score"] - base, 6)
+
+    coverage = {}
+    for mid in valid_model_ids:
+        present = [ds for ds in datasets if matrix.get(mid, {}).get(ds, {}).get("score") is not None]
+        missing = [ds for ds in datasets if ds not in present]
+        coverage[mid] = {"present": len(present), "missing": len(missing), "total": len(datasets), "missing_datasets": missing}
+
+    categories: dict[str, list[str]] = {}
+    dataset_set = set(datasets)
+    for bm in BENCHMARK_METADATA:
+        if bm["dataset_name"] in dataset_set:
+            categories.setdefault(bm["category"], []).append(bm["dataset_name"])
+
+    return {
+        "models": [model_lookup[mid] for mid in valid_model_ids],
+        "datasets": datasets,
+        "baseline_model_id": baseline_id,
+        "suite_id": suite_id,
+        "common_only": common_only,
+        "matrix": matrix,
+        "coverage": coverage,
+        "categories": categories,
+    }
+
+
 @app.get("/api/heatmap")
 async def get_heatmap(suite_id: str | None = Query(None)):
     all_datasets = sorted({e["dataset_name"] for e in EVAL_RESULTS if e["is_primary"]}
