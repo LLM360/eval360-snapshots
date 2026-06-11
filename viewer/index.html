@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
 <script>
 /* Set the theme before first paint so there's no flash of the wrong theme.
    Preference order: saved choice → OS preference → dark. */
@@ -475,6 +476,20 @@ main {
   padding: 20px;
 }
 
+.panel-head,
+.chart-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-head .panel-title,
+.chart-card-head h3 {
+  margin-bottom: 0;
+}
+
 .panel-title {
   font-size: 12px;
   font-weight: 600;
@@ -560,6 +575,90 @@ main {
 .trend-flat      { color: var(--muted); }
 .trend-new       { color: var(--accent); }
 
+.info-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: -4px 0 12px;
+}
+
+.inline-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--border-2);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: help;
+  flex: 0 0 auto;
+}
+
+.chart-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chart-download-btn,
+.zoom-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  border-radius: var(--radius);
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chart-download-btn:hover,
+.zoom-reset-btn:hover {
+  color: var(--accent);
+  border-color: var(--border-2);
+  background: var(--accent-dim);
+}
+
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend-zero {
+  width: 18px;
+  height: 1px;
+  background: var(--muted);
+  display: inline-block;
+}
+
 /* ===================================================================
    COMPARE CONTROLS
    =================================================================== */
@@ -633,6 +732,30 @@ select option { background: var(--surface); }
   font-size: 12px;
 }
 
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+.segmented button.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
 .confirm-dialog {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 200;
@@ -686,6 +809,12 @@ select option { background: var(--surface); }
 }
 
 .chart-wrap { position: relative; height: 210px; }
+
+.zoom-hint {
+  color: var(--muted);
+  font-size: 11px;
+  margin: -4px 0 12px;
+}
 
 /* ===================================================================
    COMPARE WORKFLOW
@@ -838,6 +967,25 @@ select option { background: var(--surface); }
   background: var(--accent-dim);
 }
 
+.compare-chart-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.compare-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: -4px;
+}
+
+.shared-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
 .compare-big-chart {
   position: relative;
   height: 360px;
@@ -894,6 +1042,14 @@ select option { background: var(--surface); }
   font-family: var(--font-mono);
   font-size: 11px;
   margin-left: 6px;
+}
+
+.compare-raw-score {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  margin-top: 2px;
 }
 
 .compare-missing {
@@ -1250,6 +1406,9 @@ function destroyCharts() { _charts.forEach(c => { try { c.destroy(); } catch(_){
 
 /* Chart.js defaults */
 Chart.defaults.font.family = "'Outfit', sans-serif";
+if (window.ChartZoom) {
+  try { Chart.register(window.ChartZoom); } catch (e) {}
+}
 
 /* ===================================================================
    THEME (light / dark) — driven by the CSS custom properties above
@@ -1541,6 +1700,7 @@ async function api(path) {
    COMPARE HELPERS
    =================================================================== */
 const MAX_COMPARE_MODELS = 7;
+const DEFAULT_BASELINE_ID = 'qwen-2.5-72b';
 
 function parseHashQuery() {
   const hash = location.hash || '';
@@ -1609,6 +1769,7 @@ function buildCompareHash(state) {
   if (state.commonOnly) p.set('common_only', 'true');
   if (state.benchmark) p.set('benchmark', state.benchmark);
   if (state.mode && state.mode !== 'bars') p.set('mode', state.mode);
+  if (state.scale && state.scale !== 'normalized') p.set('scale', state.scale);
   const qs = p.toString();
   return '#compare' + (qs ? '?' + qs : '');
 }
@@ -1625,6 +1786,180 @@ function signed(v) {
 
 function formatScore(v) {
   return v == null ? '\u2014' : v.toFixed(3);
+}
+
+function metricRangeForDataset(data, dataset, modelIds) {
+  const vals = [];
+  const ids = modelIds && modelIds.length ? modelIds : Object.keys(data.matrix || {});
+  for (const mid of ids) {
+    const entry = (data.matrix?.[mid] || {})[dataset];
+    if (entry && entry.status === 'completed' && entry.score != null) vals.push(entry.score);
+  }
+  if (!vals.length) return {min: 0, max: 1, source: 'no completed scores'};
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  if (min >= 0 && max <= 1) return {min: 0, max: 1, source: 'native 0-1 scale'};
+  if (Math.abs(max - min) < 1e-12) return {min: min - 0.5, max: max + 0.5, source: 'view-relative scale'};
+  return {min, max, source: 'view-relative scale'};
+}
+
+function normalizeScore(raw, range) {
+  if (raw == null) return null;
+  const span = range.max - range.min;
+  if (!span) return 0.5;
+  return Math.max(0, Math.min(1, (raw - range.min) / span));
+}
+
+function displayScoreFor(data, modelId, dataset, scale, modelIds) {
+  const raw = completedScore(data, modelId, dataset);
+  if (raw == null) return null;
+  if (scale === 'raw') return raw;
+  return normalizeScore(raw, metricRangeForDataset(data, dataset, modelIds));
+}
+
+function averageDisplayedScoreForModel(data, modelId, datasets, scale, modelIds) {
+  const vals = [];
+  for (const ds of datasets) {
+    const v = displayScoreFor(data, modelId, ds, scale, modelIds);
+    if (v != null) vals.push(v);
+  }
+  if (!vals.length) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+function primaryScoreMap(scores) {
+  const out = {};
+  for (const s of scores || []) {
+    if (!s.is_primary) continue;
+    const cur = out[s.dataset_name];
+    if (!cur || s.metric_value > cur.metric_value) out[s.dataset_name] = s;
+  }
+  return out;
+}
+
+function computeSignificanceFromCi(mVal, mLo, mHi, bVal, bLo, bHi) {
+  if (mLo == null || mHi == null || bLo == null || bHi == null) return 'insufficient_data';
+  if (mLo > bHi || bLo > mHi) return 'likely_real';
+  const overlap = Math.min(mHi, bHi) - Math.max(mLo, bLo);
+  const smallerWidth = Math.min(mHi - mLo, bHi - bLo);
+  if (smallerWidth > 0 && overlap / smallerWidth > 0.5) return 'likely_noise';
+  return 'uncertain';
+}
+
+function sharedDatasetStats(data, modelIds, benchmark) {
+  const datasets = benchmark ? [benchmark] : orderedDatasetsFromHeatmap(data);
+  const shared = datasets.filter(ds => modelIds.every(mid => completedScore(data, mid, ds) != null));
+  return {shared: shared.length, total: datasets.length};
+}
+
+function addInfoIcon(title) {
+  return el('span', {class: 'inline-help', title}, '?');
+}
+
+function makeDeltaLegend() {
+  const legend = el('div', {class: 'chart-legend'});
+  const ahead = el('span', {class: 'legend-item'});
+  ahead.appendChild(el('span', {class: 'legend-swatch', style: 'background:var(--green)'}));
+  ahead.appendChild(document.createTextNode('higher than baseline'));
+  const behind = el('span', {class: 'legend-item'});
+  behind.appendChild(el('span', {class: 'legend-swatch', style: 'background:var(--red)'}));
+  behind.appendChild(document.createTextNode('lower than baseline'));
+  const zero = el('span', {class: 'legend-item'});
+  zero.appendChild(el('span', {class: 'legend-zero'}));
+  zero.appendChild(document.createTextNode('equal'));
+  legend.appendChild(ahead);
+  legend.appendChild(behind);
+  legend.appendChild(zero);
+  return legend;
+}
+
+function safeFilename(s) {
+  return String(s || 'chart').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'chart';
+}
+
+function triggerPngDownload(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  // Some embedded browsers ignore `download`; target gives them a chance to
+  // open the generated PNG instead of silently doing nothing.
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function downloadChartPng(chart, name, btn) {
+  if (!chart || !chart.canvas) return;
+  const filename = safeFilename(name) + '.png';
+  const originalText = btn ? btn.textContent : null;
+  if (btn) {
+    btn.textContent = 'Exporting...';
+    btn.disabled = true;
+  }
+
+  function finish(label) {
+    if (!btn) return;
+    btn.textContent = label || originalText || 'PNG';
+    window.setTimeout(() => {
+      btn.textContent = originalText || 'PNG';
+      btn.disabled = false;
+    }, 900);
+  }
+
+  function fallbackToDataUrl() {
+    try {
+      triggerPngDownload(chart.toBase64Image('image/png', 1), filename);
+      finish('PNG ready');
+    } catch (e) {
+      finish('Failed');
+    }
+  }
+
+  try {
+    chart.update('none');
+    chart.canvas.toBlob((blob) => {
+      if (!blob) {
+        fallbackToDataUrl();
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      triggerPngDownload(url, filename);
+      window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+      finish('PNG ready');
+    }, 'image/png', 1);
+  } catch (e) {
+    fallbackToDataUrl();
+  }
+}
+
+function bindDownloadButton(btn, chartGetter, nameGetter) {
+  btn.addEventListener('click', () => downloadChartPng(chartGetter(), nameGetter(), btn));
+}
+
+function zoomPluginOptions() {
+  return {
+    zoom: {
+      wheel: {enabled: true},
+      pinch: {enabled: true},
+      drag: {
+        enabled: true,
+        borderColor: cssVar('--accent'),
+        borderWidth: 1,
+        backgroundColor: isLight() ? 'rgba(138,94,44,0.12)' : 'rgba(79,172,254,0.12)',
+      },
+      mode: 'x',
+    },
+    pan: {enabled: true, mode: 'x', modifierKey: 'shift'},
+    limits: {x: {min: 'original', max: 'original'}},
+  };
+}
+
+function resetChartZoom(chart) {
+  if (!chart) return;
+  if (typeof chart.resetZoom === 'function') chart.resetZoom();
 }
 
 /* ===================================================================
@@ -2345,37 +2680,39 @@ async function viewModelDetail(app, modelId) {
   }
   wrap.appendChild(promotionWrap);
 
-  // Diagnostic panels: delta bar chart + gap analysis
+  // Diagnostic panels: fixed-baseline difference + gap table
   const diagGrid = el('div', {class:'diag-grid'});
+  const baselineModels = allModels.models.filter(m => m.model_type === 'baseline');
+  const defaultBaseline = baselineModels.find(m => m.model_id === DEFAULT_BASELINE_ID) || baselineModels[0];
+  const sourceScoreRows = Object.entries(diagData.scores || {}).sort((a, b) => a[0].localeCompare(b[0]));
 
-  // -- Delta Bar Chart --
+  // -- Difference Bar Chart --
   const deltaPanel = el('div', {class:'panel'});
-  const deltaPanelTitle = el('div', {class:'panel-title'}, 'Gap Analysis vs Best Baseline');
-  deltaPanel.appendChild(deltaPanelTitle);
+  const deltaHead = el('div', {class:'panel-head'});
+  const deltaPanelTitle = el('div', {class:'panel-title'}, 'Difference vs Baseline');
+  const deltaActions = el('div', {class:'chart-actions'});
+  const deltaDownloadBtn = el('button', {class:'chart-download-btn', type:'button'}, 'PNG');
+  deltaActions.appendChild(deltaDownloadBtn);
+  deltaHead.appendChild(deltaPanelTitle);
+  deltaHead.appendChild(deltaActions);
+  deltaPanel.appendChild(deltaHead);
+  deltaPanel.appendChild(el('div', {class:'info-note'}, 'Difference is current model score minus the selected fixed baseline on the same benchmark.'));
 
-  // Reference selector
-  const refSelectWrap = el('div', {style:'margin-bottom:12px'});
-  const refLabel = el('label', {style:'font-size:12px;color:var(--muted);margin-right:8px'}, 'Reference:');
-  refSelectWrap.appendChild(refLabel);
+  const refSelectWrap = el('div', {style:'margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;'});
+  refSelectWrap.appendChild(el('label', {style:'font-size:12px;color:var(--muted);'}, 'Baseline'));
   const refSelect = document.createElement('select');
   refSelect.style.fontSize = '12px';
-  const defaultRefOpt = document.createElement('option');
-  defaultRefOpt.value = '__best_baseline__';
-  defaultRefOpt.textContent = 'Best baseline (default)';
-  refSelect.appendChild(defaultRefOpt);
-  const sizeMatchedOpt = document.createElement('option');
-  sizeMatchedOpt.value = '__size_matched__';
-  sizeMatchedOpt.textContent = 'Size-matched (\u00b150%)';
-  refSelect.appendChild(sizeMatchedOpt);
-  for (const m of allModels.models) {
-    if (m.model_id === modelId) continue;
+  for (const m of baselineModels) {
     const opt = document.createElement('option');
     opt.value = m.model_id;
-    opt.textContent = m.display_name + ' (' + m.model_type + ')';
+    opt.textContent = m.display_name;
     refSelect.appendChild(opt);
   }
+  if (defaultBaseline) refSelect.value = defaultBaseline.model_id;
   refSelectWrap.appendChild(refSelect);
+  refSelectWrap.appendChild(addInfoIcon('Baseline is fixed across all benchmarks. Missing baseline results stay missing instead of switching to another model.'));
   deltaPanel.appendChild(refSelectWrap);
+  deltaPanel.appendChild(makeDeltaLegend());
 
   const deltaWrap = el('div', {class:'delta-bar-wrap'});
   const deltaCanvas = document.createElement('canvas');
@@ -2384,241 +2721,59 @@ async function viewModelDetail(app, modelId) {
   diagGrid.appendChild(deltaPanel);
 
   let deltaChart = null;
+  bindDownloadButton(deltaDownloadBtn, () => deltaChart, () => deltaPanelTitle.textContent);
 
-  // -- Gap Analysis --
+  // -- Gap Analysis Table --
   const gapPanel = el('div', {class:'panel'});
-  gapPanel.appendChild(el('div', {class:'panel-title'}, 'Gap Analysis vs Best Baseline'));
+  const gapHead = el('div', {class:'panel-head'});
+  const gapPanelTitle = el('div', {class:'panel-title'}, 'Difference Table');
+  gapHead.appendChild(gapPanelTitle);
+  gapPanel.appendChild(gapHead);
+  gapPanel.appendChild(el('div', {class:'info-note'}, 'Green means this model is above the selected baseline; red means it is below it.'));
   const gapTable = document.createElement('table');
   gapTable.className = 'gap-table';
 
   const gHead = document.createElement('thead');
   const gHRow = document.createElement('tr');
-  ['Benchmark', 'Score', 'Best Baseline', 'Gap', 'Trend', 'Sig.'].forEach(c => gHRow.appendChild(el('th', null, c)));
+  ['Benchmark', 'Score', 'Baseline', 'Difference', 'Trend', 'Sig.'].forEach(c => gHRow.appendChild(el('th', null, c)));
   gHead.appendChild(gHRow);
   gapTable.appendChild(gHead);
-
   const gBody = document.createElement('tbody');
-  const sortedDs = Object.entries(diagData.scores).sort((a, b) => (a[1].gap || 0) - (b[1].gap || 0));
-
-  for (const [ds, info] of sortedDs) {
-    const tr = document.createElement('tr');
-
-    const dsTd = el('td', {style:'font-weight:500;color:var(--text-bright)'});
-    dsTd.appendChild(document.createTextNode(ds));
-    if (info.metric_name) {
-      dsTd.appendChild(document.createTextNode(' '));
-      dsTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:11px'}, info.metric_name));
-    }
-    tr.appendChild(dsTd);
-
-    const valTd = el('td', {class:'gap-value'});
-    valTd.textContent = info.value.toFixed(4);
-    valTd.style.color = scoreColor(info.value);
-    valTd.dataset.scoreText = info.value;   // for in-place recolor on theme toggle
-    if (info.sample_count != null) {
-      valTd.appendChild(document.createTextNode(' '));
-      valTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:10px'}, 'n=' + info.sample_count));
-    }
-    tr.appendChild(valTd);
-
-    const blTd = document.createElement('td');
-    if (info.baseline_best != null) {
-      blTd.appendChild(el('span', {class:'gap-value', style:'color:var(--muted)'}, info.baseline_best.toFixed(4)));
-      blTd.appendChild(document.createTextNode(' '));
-      blTd.appendChild(el('span', {style:'font-size:11px;color:var(--muted)'}, info.baseline_model || ''));
-    } else {
-      blTd.textContent = '\u2014';
-    }
-    tr.appendChild(blTd);
-
-    const gapTd = el('td', {class:'gap-value ' + gapClass(info.gap)});
-    gapTd.textContent = info.gap != null ? (info.gap > 0 ? '+' : '') + info.gap.toFixed(4) : '\u2014';
-    tr.appendChild(gapTd);
-
-    const trendTd = el('td', {class:'trend-icon trend-' + info.trend});
-    trendTd.textContent = trendIcon(info.trend);
-    tr.appendChild(trendTd);
-
-    const sigTd = el('td', {style: 'text-align:center'});
-    const sig = info.significance || 'insufficient_data';
-    const sigMap = {
-      likely_real: {icon: '\u25cf', class: info.gap >= 0 ? 'gap-positive' : 'gap-negative', tip: 'CIs do not overlap \u2014 likely real'},
-      likely_noise: {icon: '~', class: 'gap-neutral', tip: 'CIs overlap significantly \u2014 likely noise'},
-      uncertain: {icon: '?', class: 'trend-flat', tip: 'Partial CI overlap \u2014 uncertain'},
-      insufficient_data: {icon: '\u2014', class: 'gap-neutral', tip: 'Insufficient data for CI comparison'},
-    };
-    const s = sigMap[sig] || sigMap.insufficient_data;
-    sigTd.textContent = s.icon;
-    sigTd.className = s.class;
-    sigTd.title = s.tip;
-    sigTd.style.cursor = 'help';
-    tr.appendChild(sigTd);
-
-    gBody.appendChild(tr);
-  }
-
   gapTable.appendChild(gBody);
   gapPanel.appendChild(gapTable);
   diagGrid.appendChild(gapPanel);
   wrap.appendChild(diagGrid);
 
-  // Render delta bar chart
-  function buildDeltaChart(refScores, refName) {
-    // refScores: { datasetName: score } for the reference
-    const gaps = sortedDs.map(([ds, info]) => {
-      const myScore = info.value;
-      const refScore = refScores[ds];
-      if (refScore == null || myScore == null) return { ds, gap: null, significance: info.significance };
-      return { ds, gap: myScore - refScore, significance: info.significance };
-    }).filter(g => g.gap != null).sort((a, b) => a.gap - b.gap); // worst first
-
-    if (deltaChart) { deltaChart.destroy(); _charts = _charts.filter(c => c !== deltaChart); }
-
-    deltaPanelTitle.textContent = 'Gap Analysis vs ' + refName;
-
-    const cc = chartColors();
-    const barColors = gaps.map(g => {
-      const gap = g.gap || 0;
-      const sig = g.significance || 'insufficient_data';
-      const alpha = sig === 'likely_noise' ? '66' : sig === 'insufficient_data' ? '99' : 'ff';
-      return (gap >= 0 ? cc.green : cc.red) + alpha;
+  function sortedGapEntries(gapData) {
+    return Object.entries(gapData).sort((a, b) => {
+      const av = a[1].gap == null ? Infinity : a[1].gap;
+      const bv = b[1].gap == null ? Infinity : b[1].gap;
+      return av - bv;
     });
-
-    deltaChart = new Chart(deltaCanvas, {
-      type: 'bar',
-      data: {
-        labels: gaps.map(g => g.ds),
-        datasets: [{
-          label: 'Gap',
-          data: gaps.map(g => g.gap),
-          backgroundColor: barColors,
-          borderColor: gaps.map(g => g.gap >= 0 ? cc.green : cc.red),
-          borderWidth: 1,
-          borderRadius: 3,
-        }],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            grid: { color: cc.grid },
-            ticks: { color: cc.tick, font: { size: 11, family: 'JetBrains Mono' } },
-          },
-          y: {
-            grid: { display: false },
-            ticks: { color: cc.tick, font: { size: 11, family: 'Outfit' } },
-          },
-        },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: cc.tooltipBg, borderColor: cc.tooltipBorder, borderWidth: 1,
-            titleColor: cc.tooltipTitle, bodyColor: cc.tooltipBody,
-            callbacks: { label(ctx) { const v = ctx.raw; return (v > 0 ? '+' : '') + v.toFixed(4); } },
-          },
-        },
-      },
-    });
-    _charts.push(deltaChart);
-    deltaChart.$gaps = gaps;   // stash for in-place recolor on theme toggle
   }
 
-  // Default: best baseline reference
-  const defaultRefScores = {};
-  for (const [ds, info] of sortedDs) {
-    defaultRefScores[ds] = info.baseline_best;
-  }
-  buildDeltaChart(defaultRefScores, 'Best Baseline');
-
-  // Reference selector change handler
-  refSelect.addEventListener('change', async () => {
-    const refId = refSelect.value;
-    if (refId === '__best_baseline__') {
-      buildDeltaChart(defaultRefScores, 'Best Baseline');
-      // Also rebuild gap table with default data
-      rebuildGapTable(diagData.scores);
-    } else if (refId === '__size_matched__') {
-      // Size-matched: find models within +/-50% param_count of primary model
-      const primaryParams = model.param_count;
-      let sizeMatchedRef = null;
-      if (primaryParams) {
-        const lo = primaryParams * 0.5;
-        const hi = primaryParams * 1.5;
-        const candidates = allModels.models.filter(m =>
-          m.model_id !== modelId && m.param_count && m.param_count >= lo && m.param_count <= hi
-        );
-        // Pick candidate with best average score from heatmap
-        if (candidates.length > 0) {
-          // Fetch heatmap to get average scores
-          try {
-            const hm = await api('/api/heatmap');
-            let bestAvg = -1;
-            for (const c of candidates) {
-              const scores = hm.matrix[c.model_id] || {};
-              const vals = Object.values(scores).map(e => e && e.score != null ? e.score : null).filter(v => v != null);
-              const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : -1;
-              if (avg > bestAvg) { bestAvg = avg; sizeMatchedRef = c; }
-            }
-          } catch (e) {
-            // Fallback: pick first candidate
-            sizeMatchedRef = candidates[0];
-          }
-        }
-      }
-      if (sizeMatchedRef) {
-        try {
-          const refData = await api('/api/models/' + encodeURIComponent(sizeMatchedRef.model_id) + '/scores');
-          const refScores = {};
-          const refName = sizeMatchedRef.display_name + ' (size-matched)';
-          for (const s of refData.scores) {
-            if (s.is_primary) refScores[s.dataset_name] = s.metric_value;
-          }
-          buildDeltaChart(refScores, refName);
-          const newGapData = {};
-          for (const [ds, info] of sortedDs) {
-            const refVal = refScores[ds];
-            const gap = (refVal != null && info.value != null) ? info.value - refVal : null;
-            newGapData[ds] = { ...info, baseline_best: refVal, baseline_model: refName, gap };
-          }
-          rebuildGapTable(newGapData);
-        } catch (e) {
-          console.error('Failed to fetch size-matched reference scores:', e);
-        }
-      } else {
-        // No size-matched model found, fall back to best baseline
-        buildDeltaChart(defaultRefScores, 'Best Baseline (no size match)');
-        rebuildGapTable(diagData.scores);
-      }
-    } else {
-      try {
-        const refData = await api('/api/models/' + encodeURIComponent(refId) + '/scores');
-        const refScores = {};
-        const refName = allModels.models.find(m => m.model_id === refId)?.display_name || refId;
-        for (const s of refData.scores) {
-          if (s.is_primary) refScores[s.dataset_name] = s.metric_value;
-        }
-        buildDeltaChart(refScores, refName);
-        // Rebuild gap table with new reference
-        const newGapData = {};
-        for (const [ds, info] of sortedDs) {
-          const refVal = refScores[ds];
-          const gap = (refVal != null && info.value != null) ? info.value - refVal : null;
-          newGapData[ds] = { ...info, baseline_best: refVal, baseline_model: refName, gap };
-        }
-        rebuildGapTable(newGapData);
-      } catch (e) {
-        console.error('Failed to fetch reference scores:', e);
-      }
+  function buildGapData(refScoreMap, refName) {
+    const out = {};
+    for (const [ds, info] of sourceScoreRows) {
+      const ref = refScoreMap[ds];
+      const refVal = ref ? ref.metric_value : null;
+      const gap = refVal != null && info.value != null ? info.value - refVal : null;
+      out[ds] = {
+        ...info,
+        baseline_best: refVal,
+        baseline_model: refName,
+        gap,
+        significance: ref
+          ? computeSignificanceFromCi(info.value, info.ci_lower, info.ci_upper, ref.metric_value, ref.ci_lower, ref.ci_upper)
+          : 'insufficient_data',
+      };
     }
-  });
+    return out;
+  }
 
-  // Gap table rebuild function (for reference selector changes)
-  function rebuildGapTable(gapData) {
+  function renderGapTable(gapData) {
     clearNode(gBody);
-    const newSorted = Object.entries(gapData).sort((a, b) => (a[1].gap || 0) - (b[1].gap || 0));
-    for (const [ds, info] of newSorted) {
+    for (const [ds, info] of sortedGapEntries(gapData)) {
       const tr = document.createElement('tr');
 
       const dsTd = el('td', {style:'font-weight:500;color:var(--text-bright)'});
@@ -2676,6 +2831,83 @@ async function viewModelDetail(app, modelId) {
     }
   }
 
+  function buildDeltaChartFromGapData(gapData, refName) {
+    const gaps = sortedGapEntries(gapData)
+      .map(([ds, info]) => ({ ds, gap: info.gap, significance: info.significance }))
+      .filter(g => g.gap != null);
+
+    if (deltaChart) { deltaChart.destroy(); _charts = _charts.filter(c => c !== deltaChart); }
+    deltaPanelTitle.textContent = 'Difference vs ' + refName;
+    gapPanelTitle.textContent = 'Difference vs ' + refName;
+
+    const cc = chartColors();
+    const barColors = gaps.map(g => {
+      const sig = g.significance || 'insufficient_data';
+      const alpha = sig === 'likely_noise' ? '66' : sig === 'insufficient_data' ? '99' : 'ff';
+      return ((g.gap || 0) >= 0 ? cc.green : cc.red) + alpha;
+    });
+
+    deltaChart = new Chart(deltaCanvas, {
+      type: 'bar',
+      data: {
+        labels: gaps.map(g => g.ds),
+        datasets: [{
+          label: 'Difference',
+          data: gaps.map(g => g.gap),
+          backgroundColor: barColors,
+          borderColor: gaps.map(g => g.gap >= 0 ? cc.green : cc.red),
+          borderWidth: 1,
+          borderRadius: 3,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            grid: { color: cc.grid },
+            ticks: { color: cc.tick, font: { size: 11, family: 'JetBrains Mono' } },
+          },
+          y: {
+            grid: { display: false },
+            ticks: { color: cc.tick, font: { size: 11, family: 'Outfit' } },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: cc.tooltipBg, borderColor: cc.tooltipBorder, borderWidth: 1,
+            titleColor: cc.tooltipTitle, bodyColor: cc.tooltipBody,
+            callbacks: { label(ctx) { const v = ctx.raw; return 'model - baseline: ' + (v > 0 ? '+' : '') + v.toFixed(4); } },
+          },
+        },
+      },
+    });
+    _charts.push(deltaChart);
+    deltaChart.$gaps = gaps;
+  }
+
+  async function renderSelectedBaseline(refId) {
+    const refModel = baselineModels.find(m => m.model_id === refId);
+    if (!refModel) {
+      renderGapTable({});
+      return;
+    }
+    const refData = await api('/api/models/' + encodeURIComponent(refId) + '/scores');
+    const gapData = buildGapData(primaryScoreMap(refData.scores), refModel.display_name);
+    renderGapTable(gapData);
+    buildDeltaChartFromGapData(gapData, refModel.display_name);
+  }
+
+  refSelect.addEventListener('change', async () => {
+    try { await renderSelectedBaseline(refSelect.value); }
+    catch (e) { console.error('Failed to fetch baseline scores:', e); }
+  });
+
+  if (defaultBaseline) await renderSelectedBaseline(defaultBaseline.model_id);
+  else renderGapTable({});
+
   // Compare controls
   const compareBar = el('div', {class:'compare-bar'});
   compareBar.appendChild(el('label', null, 'Compare with...'));
@@ -2694,9 +2926,14 @@ async function viewModelDetail(app, modelId) {
   const commonToggle = document.createElement('input');
   commonToggle.type = 'checkbox';
   commonToggle.id = 'common-only';
-  const commonLabel = el('label', {for: 'common-only', style: 'color:var(--muted);font-size:12px;cursor:pointer'}, 'Common benchmarks only');
+  const commonLabel = el('label', {
+    for: 'common-only',
+    style: 'color:var(--muted);font-size:12px;cursor:pointer',
+    title: 'Only draw benchmarks where every selected model has completed results.',
+  }, 'Shared benchmarks only');
   compareBar.appendChild(commonToggle);
   compareBar.appendChild(commonLabel);
+  compareBar.appendChild(addInfoIcon('Shared benchmarks only avoids comparing across missing benchmark coverage. It is mainly useful for strict model-to-model comparisons.'));
   const updateBtn = el('button', {class:'btn'}, 'Update Charts');
   compareBar.appendChild(updateBtn);
   const fullCompareBtn = el('button', {class:'btn btn-secondary'}, 'Open full comparison');
@@ -2707,14 +2944,17 @@ async function viewModelDetail(app, modelId) {
   const curvesHead = el('div', {class:'section-head', style:'display:flex;align-items:center;justify-content:space-between'});
   curvesHead.appendChild(document.createTextNode('Training Curves'));
   const bandControls = el('span', {style:'display:flex;align-items:center'});
+  const resetZoomBtn = el('button', {class:'zoom-reset-btn', type:'button'}, 'Reset zoom');
   const bandToggle = document.createElement('input');
   bandToggle.type = 'checkbox';
   bandToggle.id = 'show-bands';
   const bandLabel = el('label', {for: 'show-bands', style: 'color:var(--muted);font-size:12px;cursor:pointer;margin-left:16px'}, 'Show uncertainty');
+  bandControls.appendChild(resetZoomBtn);
   bandControls.appendChild(bandToggle);
   bandControls.appendChild(bandLabel);
   curvesHead.appendChild(bandControls);
   wrap.appendChild(curvesHead);
+  wrap.appendChild(el('div', {class:'zoom-hint'}, 'Steps are most meaningful within the same training run. Drag to zoom, use the wheel to zoom, shift-drag to pan, double click or Reset zoom to restore.'));
 
   // Chart grid
   const chartGrid = el('div', {class:'chart-grid'});
@@ -2779,7 +3019,13 @@ async function viewModelDetail(app, modelId) {
         titleEl.appendChild(document.createTextNode(' '));
         titleEl.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:11px'}, metricName));
       }
-      card.appendChild(titleEl);
+      const cardHead = el('div', {class:'chart-card-head'});
+      const cardActions = el('div', {class:'chart-actions'});
+      const chartDownloadBtn = el('button', {class:'chart-download-btn', type:'button'}, 'PNG');
+      cardActions.appendChild(chartDownloadBtn);
+      cardHead.appendChild(titleEl);
+      cardHead.appendChild(cardActions);
+      card.appendChild(cardHead);
       const cw = el('div', {class:'chart-wrap'});
       const canvas = document.createElement('canvas');
       cw.appendChild(canvas);
@@ -2895,12 +3141,19 @@ async function viewModelDetail(app, modelId) {
               callbacks: { label(ctx) { if (ctx.dataset._isCIBand) return null; const r=ctx.raw; return ctx.dataset.label+': '+r.y.toFixed(4)+(r.x!=null?' (step '+r.x+')':''); } },
               filter: function(tooltipItem) { return !tooltipItem.dataset._isCIBand; },
             },
+            zoom: zoomPluginOptions(),
           },
         },
       });
       _charts.push(chart);
+      canvas.addEventListener('dblclick', () => resetChartZoom(chart));
+      bindDownloadButton(chartDownloadBtn, () => chart, () => model.display_name + '-' + dsName + '-curve');
     }
   }
+
+  resetZoomBtn.addEventListener('click', () => {
+    _charts.forEach(ch => { if (ch !== deltaChart) resetChartZoom(ch); });
+  });
 
   await renderCurves([]);
 
@@ -2946,6 +3199,7 @@ async function viewCompare(app) {
     commonOnly: params.get('common_only') === 'true',
     benchmark: params.get('benchmark') || '',
     mode: ['delta', 'radar', 'curves'].includes(params.get('mode')) ? params.get('mode') : 'bars',
+    scale: params.get('scale') === 'raw' ? 'raw' : 'normalized',
   };
 
   async function loadHeatmap(suiteId) {
@@ -3022,8 +3276,19 @@ async function viewCompare(app) {
   commonToggle.type = 'checkbox';
   commonToggle.checked = state.commonOnly;
   commonLabel.appendChild(commonToggle);
-  commonLabel.appendChild(document.createTextNode('Common only'));
+  commonLabel.appendChild(document.createTextNode('Shared benchmarks only'));
   controlsRow.appendChild(commonLabel);
+  controlsRow.appendChild(addInfoIcon('Only show benchmarks where every selected model has a completed result. This avoids coverage-driven comparisons.'));
+  const sharedCount = el('span', {class:'shared-count'}, '');
+  controlsRow.appendChild(sharedCount);
+
+  controlsRow.appendChild(el('label', null, 'Scale'));
+  const scaleToggle = el('div', {class:'segmented'});
+  const normalizedBtn = el('button', {type:'button'}, 'Normalized');
+  const rawBtn = el('button', {type:'button'}, 'Raw');
+  scaleToggle.appendChild(normalizedBtn);
+  scaleToggle.appendChild(rawBtn);
+  controlsRow.appendChild(scaleToggle);
 
   controlsRow.appendChild(el('label', null, 'Preset'));
   const presetSelect = document.createElement('select');
@@ -3043,8 +3308,13 @@ async function viewCompare(app) {
   const chartPanel = el('div', {class:'compare-chart-panel'});
   shell.appendChild(chartPanel);
   const chartHead = el('div', {class:'compare-chart-head'});
+  const chartTitleWrap = el('div');
   const chartTitle = el('div', {class:'section-head', style:'margin:0;border:0;padding:0;'}, 'Benchmark Scores');
-  chartHead.appendChild(chartTitle);
+  const chartNote = el('div', {class:'compare-note'}, '');
+  chartTitleWrap.appendChild(chartTitle);
+  chartTitleWrap.appendChild(chartNote);
+  chartHead.appendChild(chartTitleWrap);
+  const chartTools = el('div', {class:'compare-chart-tools'});
   const modeTabs = el('div', {class:'compare-mode-tabs'});
   const barsBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Grouped bars');
   const deltaBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Delta bars');
@@ -3054,7 +3324,12 @@ async function viewCompare(app) {
   modeTabs.appendChild(deltaBtn);
   modeTabs.appendChild(radarBtn);
   modeTabs.appendChild(curvesBtn);
-  chartHead.appendChild(modeTabs);
+  const compareDownloadBtn = el('button', {class:'chart-download-btn', type:'button'}, 'PNG');
+  const compareResetZoomBtn = el('button', {class:'zoom-reset-btn', type:'button'}, 'Reset zoom');
+  chartTools.appendChild(modeTabs);
+  chartTools.appendChild(compareResetZoomBtn);
+  chartTools.appendChild(compareDownloadBtn);
+  chartHead.appendChild(chartTools);
   chartPanel.appendChild(chartHead);
   const chartMount = el('div', {class:'compare-big-chart'});
   chartPanel.appendChild(chartMount);
@@ -3064,6 +3339,7 @@ async function viewCompare(app) {
 
   let compareChart = null;
   const PRESET_KEY = 'eval360-compare-presets';
+  bindDownloadButton(compareDownloadBtn, () => compareChart, () => 'compare-' + state.mode + '-' + state.scale);
 
   function loadPresets() {
     try {
@@ -3205,7 +3481,7 @@ async function viewCompare(app) {
     let bestModel = null;
     let bestAvg = null;
     for (const mid of state.models) {
-      const avg = averageScoreForModel(summaryData, mid, datasets);
+      const avg = averageDisplayedScoreForModel(summaryData, mid, datasets, state.scale, state.models);
       if (avg != null && (bestAvg == null || avg > bestAvg)) {
         bestAvg = avg;
         bestModel = byId.get(mid);
@@ -3217,8 +3493,8 @@ async function viewCompare(app) {
       for (const mid of state.models) {
         if (mid === state.baseline) continue;
         for (const ds of datasets) {
-          const base = completedScore(summaryData, state.baseline, ds);
-          const score = completedScore(summaryData, mid, ds);
+          const base = displayScoreFor(summaryData, state.baseline, ds, state.scale, state.models);
+          const score = displayScoreFor(summaryData, mid, ds, state.scale, state.models);
           if (base == null || score == null) continue;
           const delta = score - base;
           if (!bestGain || delta > bestGain.delta) bestGain = {delta, model: byId.get(mid), dataset: ds};
@@ -3229,7 +3505,7 @@ async function viewCompare(app) {
     const items = [
       [String(selectedCount), 'Selected models'],
       [String(datasets.length), state.commonOnly ? 'Common benchmarks' : 'Benchmarks shown'],
-      [bestModel ? bestModel.display_name + ' ' + bestAvg.toFixed(3) : '\u2014', 'Best average'],
+      [bestModel ? bestModel.display_name + ' ' + bestAvg.toFixed(3) : '\u2014', state.scale === 'normalized' ? 'Best normalized average' : 'Best raw average'],
       [bestGain ? signed(bestGain.delta) + ' ' + bestGain.model.display_name : (missing ? String(missing) : '0'), bestGain ? 'Biggest gain' : 'Missing cells'],
     ];
     for (const [value, label] of items) {
@@ -3247,11 +3523,25 @@ async function viewCompare(app) {
     deltaBtn.classList.toggle('active', state.mode === 'delta');
     radarBtn.classList.toggle('active', state.mode === 'radar');
     curvesBtn.classList.toggle('active', state.mode === 'curves');
+    normalizedBtn.classList.toggle('active', state.scale === 'normalized');
+    rawBtn.classList.toggle('active', state.scale === 'raw');
+    compareResetZoomBtn.style.display = state.mode === 'curves' ? 'inline-flex' : 'none';
     chartTitle.textContent = state.mode === 'delta'
-      ? 'Baseline Delta'
+      ? 'Difference vs baseline'
       : state.mode === 'radar'
-        ? 'Capability Profile'
-        : 'Benchmark Scores';
+        ? 'Capability profile'
+        : state.mode === 'curves'
+          ? 'Training curves'
+          : 'Benchmark scores';
+    chartNote.textContent = state.mode === 'delta'
+      ? 'Positive values are above the selected baseline; negative values are below it.'
+      : state.mode === 'radar'
+        ? 'Radar defaults to category averages to reduce clutter.'
+        : state.mode === 'curves'
+          ? 'Steps are most meaningful within the same training run; drag or wheel to zoom, double click to reset.'
+          : (state.scale === 'normalized'
+              ? 'Normalized scores use native 0-1 ranges when possible, otherwise the current visible min/max.'
+              : 'Raw scores show the original metric values.');
 
     if (!state.models.length || !datasets.length) {
       chartMount.appendChild(el('div', {class:'compare-empty'}, 'No comparable benchmark data.'));
@@ -3269,12 +3559,19 @@ async function viewCompare(app) {
     if (state.mode === 'delta') {
       const chartDatasets = state.models.filter(mid => mid !== state.baseline).map(mid => {
         const deltas = datasets.map(ds => {
+          const base = displayScoreFor(summaryData, state.baseline, ds, state.scale, state.models);
+          const score = displayScoreFor(summaryData, mid, ds, state.scale, state.models);
+          return base == null || score == null ? null : score - base;
+        });
+        const rawDeltas = datasets.map(ds => {
           const base = completedScore(summaryData, state.baseline, ds);
           const score = completedScore(summaryData, mid, ds);
           return base == null || score == null ? null : score - base;
         });
         return {
           label: byId.get(mid)?.display_name || mid,
+          _modelId: mid,
+          _rawDeltas: rawDeltas,
           data: deltas,
           backgroundColor: deltas.map(v => v == null ? 'rgba(128,128,128,0.22)' : (v >= 0 ? cc.green + 'aa' : cc.red + 'aa')),
           borderColor: deltas.map(v => v == null ? 'rgba(128,128,128,0.4)' : (v >= 0 ? cc.green : cc.red)),
@@ -3295,7 +3592,14 @@ async function viewCompare(app) {
             legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
             tooltip: {
               backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
-              callbacks: { label(ctx) { return ctx.dataset.label + ': ' + (ctx.raw == null ? 'missing' : signed(ctx.raw)); } },
+              callbacks: {
+                label(ctx) {
+                  if (ctx.raw == null) return ctx.dataset.label + ': missing';
+                  const rawDelta = ctx.dataset._rawDeltas?.[ctx.dataIndex];
+                  const suffix = state.scale === 'normalized' && rawDelta != null ? ' · raw ' + signed(rawDelta) : '';
+                  return ctx.dataset.label + ': ' + signed(ctx.raw) + suffix;
+                },
+              },
             },
           },
         },
@@ -3318,7 +3622,7 @@ async function viewCompare(app) {
         const color = modelColor(mid);
         return {
           label: byId.get(mid)?.display_name || mid,
-          data: axes.map(axis => averageScoreForModel(summaryData, mid, axis.datasets)),
+          data: axes.map(axis => averageDisplayedScoreForModel(summaryData, mid, axis.datasets, state.scale, state.models)),
           borderColor: color,
           backgroundColor: color + '22',
           pointBackgroundColor: color,
@@ -3326,6 +3630,12 @@ async function viewCompare(app) {
           borderWidth: 2,
         };
       });
+      const radarVals = chartDatasets.flatMap(ds => ds.data).filter(v => v != null);
+      const radarMin = radarVals.length ? Math.max(0, Math.floor((Math.min(...radarVals) - 0.08) * 10) / 10) : 0;
+      const radarMax = state.scale === 'normalized'
+        ? 1
+        : (radarVals.length ? Math.ceil((Math.max(...radarVals) + 0.08) * 10) / 10 : 1);
+      if (radarMin > 0) chartNote.textContent += ' Axis starts at ' + radarMin.toFixed(1) + ' to reduce center crowding.';
       compareChart = new Chart(canvas, {
         type: 'radar',
         data: {labels: axes.map(a => a.label), datasets: chartDatasets},
@@ -3333,7 +3643,7 @@ async function viewCompare(app) {
           responsive: true, maintainAspectRatio: false,
           scales: {
             r: {
-              min: 0, max: 1,
+              min: radarMin, max: radarMax,
               angleLines: {color: cc.grid},
               grid: {color: cc.grid},
               pointLabels: {color: cc.tick, font: {size: 11}},
@@ -3344,7 +3654,7 @@ async function viewCompare(app) {
             legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
             tooltip: {
               backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
-              callbacks: { label(ctx) { return ctx.dataset.label + ': ' + (ctx.raw == null ? 'missing' : formatScore(ctx.raw)); } },
+              callbacks: { label(ctx) { return ctx.dataset.label + ': ' + (ctx.raw == null ? 'missing' : formatScore(ctx.raw)) + (state.scale === 'normalized' ? ' normalized' : ' raw'); } },
             },
           },
         },
@@ -3404,22 +3714,29 @@ async function viewCompare(app) {
               backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
               callbacks: { label(ctx) { const r = ctx.raw; return ctx.dataset.label + ': ' + formatScore(r.y) + (r.x != null ? ' (step ' + r.x + ')' : ''); } },
             },
+            zoom: zoomPluginOptions(),
           },
         },
       });
+      canvas.addEventListener('dblclick', () => resetChartZoom(compareChart));
     } else {
-      chartTitle.textContent = 'Benchmark Scores';
       const chartDatasets = state.models.map(mid => {
         const color = modelColor(mid);
+        const rawValues = datasets.map(ds => completedScore(summaryData, mid, ds));
         return {
           label: byId.get(mid)?.display_name || mid,
-          data: datasets.map(ds => completedScore(summaryData, mid, ds)),
+          _rawValues: rawValues,
+          data: datasets.map(ds => displayScoreFor(summaryData, mid, ds, state.scale, state.models)),
           backgroundColor: color + 'aa',
           borderColor: color,
           borderWidth: 1,
           borderRadius: 3,
         };
       });
+      const barVals = chartDatasets.flatMap(ds => ds.data).filter(v => v != null);
+      const yMax = state.scale === 'normalized'
+        ? 1
+        : (barVals.length ? Math.ceil((Math.max(...barVals) + 0.05) * 10) / 10 : 1);
       compareChart = new Chart(canvas, {
         type: 'bar',
         data: {labels: datasets, datasets: chartDatasets},
@@ -3428,13 +3745,20 @@ async function viewCompare(app) {
           interaction: {mode:'index', intersect:false},
           scales: {
             x: {ticks:{color:cc.tick, maxRotation:45, minRotation:0, font:{size:11}}, grid:{display:false}},
-            y: {min:0, max:1, ticks:{color:cc.tick, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid}},
+            y: {min:0, max:yMax, ticks:{color:cc.tick, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid}},
           },
           plugins: {
             legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
             tooltip: {
               backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
-              callbacks: { label(ctx) { return ctx.dataset.label + ': ' + (ctx.raw == null ? 'missing' : formatScore(ctx.raw)); } },
+              callbacks: {
+                label(ctx) {
+                  if (ctx.raw == null) return ctx.dataset.label + ': missing';
+                  const raw = ctx.dataset._rawValues?.[ctx.dataIndex];
+                  const suffix = state.scale === 'normalized' && raw != null ? ' · raw ' + formatScore(raw) : '';
+                  return ctx.dataset.label + ': ' + formatScore(ctx.raw) + suffix;
+                },
+              },
             },
           },
         },
@@ -3469,18 +3793,22 @@ async function viewCompare(app) {
       tr.appendChild(el('td', null, ds));
       const present = state.models.filter(mid => completedScore(summaryData, mid, ds) != null).length;
       tr.appendChild(el('td', {style:'color:var(--muted);font-family:var(--font-mono);'}, present + '/' + state.models.length));
-      const base = state.baseline ? completedScore(summaryData, state.baseline, ds) : null;
+      const base = state.baseline ? displayScoreFor(summaryData, state.baseline, ds, state.scale, state.models) : null;
       for (const mid of modelOrder) {
         const td = document.createElement('td');
-        const v = completedScore(summaryData, mid, ds);
+        const raw = completedScore(summaryData, mid, ds);
+        const v = displayScoreFor(summaryData, mid, ds, state.scale, state.models);
         if (v == null) {
           td.appendChild(el('span', {class:'compare-missing'}, '\u2014'));
         } else {
           const score = el('span', {class:'compare-score'}, formatScore(v));
           score.style.color = scoreColor(v);
           td.appendChild(score);
+          if (state.scale === 'normalized' && raw != null) {
+            td.appendChild(el('span', {class:'compare-raw-score'}, 'raw ' + formatScore(raw)));
+          }
           if (mid !== state.baseline && base != null) {
-            const delta = summaryData.matrix?.[mid]?.[ds]?.delta_vs_baseline ?? (v - base);
+            const delta = v - base;
             const deltaSpan = el('span', {class:'compare-delta ' + (delta >= 0 ? 'gap-positive' : 'gap-negative')}, signed(delta));
             td.appendChild(deltaSpan);
           }
@@ -3501,11 +3829,15 @@ async function viewCompare(app) {
     populateBaselineSelect();
     populateBenchmarkSelect();
     commonToggle.checked = state.commonOnly;
+    normalizedBtn.classList.toggle('active', state.scale === 'normalized');
+    rawBtn.classList.toggle('active', state.scale === 'raw');
     suiteSelect.value = state.suite;
     setCompareUrl(state);
     await loadSummary();
     renderSelectedChips();
     const datasets = currentDatasets();
+    const shared = sharedDatasetStats(data, state.models, state.benchmark);
+    sharedCount.textContent = state.models.length > 1 ? shared.shared + '/' + shared.total + ' shared' : '';
     renderSummary(datasets);
     await renderChart(datasets);
     renderTable(datasets);
@@ -3540,6 +3872,18 @@ async function viewCompare(app) {
     await updateUrlAndRender();
   });
 
+  normalizedBtn.addEventListener('click', async () => {
+    state.scale = 'normalized';
+    await updateUrlAndRender();
+  });
+
+  rawBtn.addEventListener('click', async () => {
+    state.scale = 'raw';
+    await updateUrlAndRender();
+  });
+
+  compareResetZoomBtn.addEventListener('click', () => resetChartZoom(compareChart));
+
   barsBtn.addEventListener('click', async () => {
     state.mode = 'bars';
     await updateUrlAndRender();
@@ -3573,6 +3917,7 @@ async function viewCompare(app) {
         commonOnly: state.commonOnly,
         benchmark: state.benchmark,
         mode: state.mode,
+        scale: state.scale,
       },
       saved_at: new Date().toISOString(),
     });
@@ -3590,6 +3935,7 @@ async function viewCompare(app) {
     state.commonOnly = !!preset.state.commonOnly;
     state.benchmark = preset.state.benchmark || '';
     state.mode = preset.state.mode || 'bars';
+    state.scale = preset.state.scale === 'raw' ? 'raw' : 'normalized';
     data = await loadHeatmap(state.suite);
     await updateUrlAndRender();
   });
