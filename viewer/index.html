@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
 /* Set the theme before first paint so there's no flash of the wrong theme.
    Preference order: saved choice → OS preference → dark. */
@@ -626,6 +627,11 @@ main {
   color: var(--accent);
   border-color: var(--border-2);
   background: var(--accent-dim);
+}
+
+.report-exporting .chart-download-btn,
+.report-exporting .zoom-reset-btn {
+  display: none !important;
 }
 
 .chart-legend {
@@ -1939,6 +1945,78 @@ function bindDownloadButton(btn, chartGetter, nameGetter) {
   btn.addEventListener('click', () => downloadChartPng(chartGetter(), nameGetter(), btn));
 }
 
+function waitForPaint() {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+async function downloadReportPng(node, name, btn) {
+  if (!node) return;
+  const filename = safeFilename(name || 'report') + '.png';
+  const originalText = btn ? btn.textContent : null;
+  if (btn) {
+    btn.textContent = 'Exporting...';
+    btn.disabled = true;
+  }
+
+  function finish(label) {
+    if (!btn) return;
+    btn.textContent = label || originalText || 'Report PNG';
+    window.setTimeout(() => {
+      btn.textContent = originalText || 'Report PNG';
+      btn.disabled = false;
+    }, 900);
+  }
+
+  if (typeof html2canvas !== 'function') {
+    console.error('html2canvas is not available for report export.');
+    finish('Failed');
+    return;
+  }
+
+  let reportCanvas = null;
+  try {
+    node.classList.add('report-exporting');
+    await waitForPaint();
+    reportCanvas = await html2canvas(node, {
+      backgroundColor: cssVar('--bg'),
+      scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)),
+      useCORS: true,
+      logging: false,
+    });
+  } catch (e) {
+    console.error('Failed to export report PNG:', e);
+    finish('Failed');
+    return;
+  } finally {
+    node.classList.remove('report-exporting');
+  }
+
+  function fallbackToDataUrl() {
+    try {
+      triggerPngDownload(reportCanvas.toDataURL('image/png', 1), filename);
+      finish('Report ready');
+    } catch (e) {
+      console.error('Failed to download report PNG:', e);
+      finish('Failed');
+    }
+  }
+
+  try {
+    reportCanvas.toBlob((blob) => {
+      if (!blob) {
+        fallbackToDataUrl();
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      triggerPngDownload(url, filename);
+      window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+      finish('Report ready');
+    }, 'image/png', 1);
+  } catch (e) {
+    fallbackToDataUrl();
+  }
+}
+
 function zoomPluginOptions() {
   return {
     zoom: {
@@ -1950,10 +2028,14 @@ function zoomPluginOptions() {
         borderWidth: 1,
         backgroundColor: isLight() ? 'rgba(138,94,44,0.12)' : 'rgba(79,172,254,0.12)',
       },
-      mode: 'x',
+      mode: 'xy',
     },
-    pan: {enabled: true, mode: 'x', modifierKey: 'shift'},
-    limits: {x: {min: 'original', max: 'original'}},
+    pan: {enabled: true, mode: 'xy', modifierKey: 'shift'},
+    limits: {
+      x: {min: 'original', max: 'original'},
+      y: {min: 'original', max: 'original'},
+      r: {min: 'original', max: 'original'},
+    },
   };
 }
 
@@ -2954,7 +3036,7 @@ async function viewModelDetail(app, modelId) {
   bandControls.appendChild(bandLabel);
   curvesHead.appendChild(bandControls);
   wrap.appendChild(curvesHead);
-  wrap.appendChild(el('div', {class:'zoom-hint'}, 'Steps are most meaningful within the same training run. Drag to zoom, use the wheel to zoom, shift-drag to pan, double click or Reset zoom to restore.'));
+  wrap.appendChild(el('div', {class:'zoom-hint'}, 'Steps are most meaningful within the same training run. Drag any rectangle to zoom, use the wheel to zoom, shift-drag to pan, double click or Reset zoom to restore.'));
 
   // Chart grid
   const chartGrid = el('div', {class:'chart-grid'});
@@ -3296,6 +3378,8 @@ async function viewCompare(app) {
   controlsRow.appendChild(presetSelect);
   const savePresetBtn = el('button', {class:'btn btn-secondary btn-small', type:'button'}, 'Save preset');
   controlsRow.appendChild(savePresetBtn);
+  const reportDownloadBtn = el('button', {class:'chart-download-btn', type:'button'}, 'Report PNG');
+  controlsRow.appendChild(reportDownloadBtn);
 
   const selectedRow = el('div', {class:'compare-toolbar-row'});
   const selectedWrap = el('div', {class:'compare-selected'});
@@ -3340,6 +3424,13 @@ async function viewCompare(app) {
   let compareChart = null;
   const PRESET_KEY = 'eval360-compare-presets';
   bindDownloadButton(compareDownloadBtn, () => compareChart, () => 'compare-' + state.mode + '-' + state.scale);
+  reportDownloadBtn.addEventListener('click', () => {
+    downloadReportPng(wrap, 'compare-report-' + state.mode + '-' + state.scale, reportDownloadBtn);
+  });
+
+  function compareModeHasZoom() {
+    return state.mode === 'curves' || state.mode === 'radar';
+  }
 
   function loadPresets() {
     try {
@@ -3525,7 +3616,7 @@ async function viewCompare(app) {
     curvesBtn.classList.toggle('active', state.mode === 'curves');
     normalizedBtn.classList.toggle('active', state.scale === 'normalized');
     rawBtn.classList.toggle('active', state.scale === 'raw');
-    compareResetZoomBtn.style.display = state.mode === 'curves' ? 'inline-flex' : 'none';
+    compareResetZoomBtn.style.display = compareModeHasZoom() ? 'inline-flex' : 'none';
     chartTitle.textContent = state.mode === 'delta'
       ? 'Difference vs baseline'
       : state.mode === 'radar'
@@ -3536,9 +3627,9 @@ async function viewCompare(app) {
     chartNote.textContent = state.mode === 'delta'
       ? 'Positive values are above the selected baseline; negative values are below it.'
       : state.mode === 'radar'
-        ? 'Radar defaults to category averages to reduce clutter.'
+        ? 'Radar shows category averages. Drag any rectangle or use the wheel to zoom; double click or Reset zoom to restore.'
         : state.mode === 'curves'
-          ? 'Steps are most meaningful within the same training run; drag or wheel to zoom, double click to reset.'
+          ? 'Steps are most meaningful within the same training run; drag any rectangle or use the wheel to zoom, shift-drag to pan, double click or Reset zoom to restore.'
           : (state.scale === 'normalized'
               ? 'Normalized scores use native 0-1 ranges when possible, otherwise the current visible min/max.'
               : 'Raw scores show the original metric values.');
@@ -3656,6 +3747,7 @@ async function viewCompare(app) {
               backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
               callbacks: { label(ctx) { return ctx.dataset.label + ': ' + (ctx.raw == null ? 'missing' : formatScore(ctx.raw)) + (state.scale === 'normalized' ? ' normalized' : ' raw'); } },
             },
+            zoom: zoomPluginOptions(),
           },
         },
       });
@@ -3718,7 +3810,6 @@ async function viewCompare(app) {
           },
         },
       });
-      canvas.addEventListener('dblclick', () => resetChartZoom(compareChart));
     } else {
       const chartDatasets = state.models.map(mid => {
         const color = modelColor(mid);
@@ -3763,6 +3854,9 @@ async function viewCompare(app) {
           },
         },
       });
+    }
+    if (compareModeHasZoom()) {
+      canvas.addEventListener('dblclick', () => resetChartZoom(compareChart));
     }
     _charts.push(compareChart);
   }
