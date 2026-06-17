@@ -630,8 +630,13 @@ main {
 }
 
 .report-exporting .chart-download-btn,
-.report-exporting .zoom-reset-btn {
+.report-exporting .zoom-reset-btn,
+.report-exporting .compare-chart-tools {
   display: none !important;
+}
+
+.report-exporting .compare-table-panel {
+  overflow: visible;
 }
 
 .chart-legend {
@@ -826,6 +831,11 @@ select option { background: var(--surface); }
    COMPARE WORKFLOW
    =================================================================== */
 .compare-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.compare-report-export-area {
   display: grid;
   gap: 16px;
 }
@@ -1883,6 +1893,17 @@ function safeFilename(s) {
   return String(s || 'chart').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'chart';
 }
 
+function timestampForFilename(d = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear()
+    + pad(d.getMonth() + 1)
+    + pad(d.getDate())
+    + '-'
+    + pad(d.getHours())
+    + pad(d.getMinutes())
+    + pad(d.getSeconds());
+}
+
 function triggerPngDownload(url, filename) {
   const a = document.createElement('a');
   a.href = url;
@@ -1951,7 +1972,7 @@ function waitForPaint() {
 
 async function downloadReportPng(node, name, btn) {
   if (!node) return;
-  const filename = safeFilename(name || 'report') + '.png';
+  const filename = safeFilename(name || 'report') + '-' + timestampForFilename() + '.png';
   const originalText = btn ? btn.textContent : null;
   if (btn) {
     btn.textContent = 'Exporting...';
@@ -1977,9 +1998,17 @@ async function downloadReportPng(node, name, btn) {
   try {
     node.classList.add('report-exporting');
     await waitForPaint();
+    const rect = node.getBoundingClientRect();
+    const exportWidth = Math.ceil(Math.max(node.scrollWidth, rect.width));
+    const exportHeight = Math.ceil(Math.max(node.scrollHeight, rect.height));
+    const exportScale = Math.min(4, Math.max(3, (window.devicePixelRatio || 1) * 2));
     reportCanvas = await html2canvas(node, {
       backgroundColor: cssVar('--bg'),
-      scale: Math.min(2, Math.max(1, window.devicePixelRatio || 1)),
+      scale: exportScale,
+      width: exportWidth,
+      height: exportHeight,
+      windowWidth: Math.max(document.documentElement.clientWidth, exportWidth),
+      windowHeight: Math.max(document.documentElement.clientHeight, exportHeight),
       useCORS: true,
       logging: false,
     });
@@ -3389,8 +3418,11 @@ async function viewCompare(app) {
   const summary = el('div', {class:'compare-summary'});
   shell.appendChild(summary);
 
+  const reportExportArea = el('div', {class:'compare-report-export-area'});
+  shell.appendChild(reportExportArea);
+
   const chartPanel = el('div', {class:'compare-chart-panel'});
-  shell.appendChild(chartPanel);
+  reportExportArea.appendChild(chartPanel);
   const chartHead = el('div', {class:'compare-chart-head'});
   const chartTitleWrap = el('div');
   const chartTitle = el('div', {class:'section-head', style:'margin:0;border:0;padding:0;'}, 'Benchmark Scores');
@@ -3419,13 +3451,13 @@ async function viewCompare(app) {
   chartPanel.appendChild(chartMount);
 
   const tablePanel = el('div', {class:'compare-table-panel'});
-  shell.appendChild(tablePanel);
+  reportExportArea.appendChild(tablePanel);
 
   let compareChart = null;
   const PRESET_KEY = 'eval360-compare-presets';
   bindDownloadButton(compareDownloadBtn, () => compareChart, () => 'compare-' + state.mode + '-' + state.scale);
   reportDownloadBtn.addEventListener('click', () => {
-    downloadReportPng(wrap, 'compare-report-' + state.mode + '-' + state.scale, reportDownloadBtn);
+    downloadReportPng(reportExportArea, 'compare-report-' + state.mode + '-' + state.scale, reportDownloadBtn);
   });
 
   function compareModeHasZoom() {
