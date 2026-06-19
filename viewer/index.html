@@ -8,6 +8,23 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script>
+/* Set the theme before first paint so there's no flash of the wrong theme.
+   Preference order: saved choice → OS preference → dark. */
+(function () {
+  try {
+    var t = localStorage.getItem('eval360-theme');
+    if (t !== 'light' && t !== 'dark') {
+      t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+</script>
 <style>
 /* ===================================================================
    DESIGN TOKENS
@@ -37,6 +54,84 @@
   --font-mono:  'JetBrains Mono', monospace;
   --shadow:     0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
   --shadow-lg:  0 4px 12px rgba(0,0,0,0.5);
+}
+
+/* ===================================================================
+   LIGHT THEME — "MAI Cream"
+   Adapted from microsoft.ai (mai-thinking-1): cream backgrounds,
+   taupe text, camel/bronze accent. Semantic colors are warm and
+   WCAG-AA legible on cream (>=4.5 for normal text). Dark mode is
+   untouched. Toggled via <html data-theme="light">.
+   =================================================================== */
+html[data-theme="light"] {
+  --bg:         #fef9ed;              /* microsoft.ai --background-color */
+  --bg-raised:  #fffefb;
+  --surface:    #fffefb;
+  --surface-2:  #f7ecd9;             /* their deeper section band */
+  --border:     rgba(93,82,75,0.16); /* taupe divider (theirs: rgba(93,82,75,.30)) */
+  --border-2:   rgba(93,82,75,0.32);
+  --text:       #5d524b;             /* microsoft.ai --text-color */
+  --text-bright:#2e2823;
+  --muted:      #736556;
+  --accent:     #8a5e2c;             /* legible bronze derived from their camel #a67c52 */
+  --accent-dim: rgba(166,124,82,0.16);/* tint uses the original camel #a67c52 */
+  --green:      #2f7a43;
+  --green-dim:  rgba(47,122,67,0.13);
+  --red:        #b83a14;
+  --red-dim:    rgba(184,58,20,0.12);
+  --amber:      #a8530a;
+  --amber-dim:  rgba(168,83,10,0.13);
+  --teal:       #2f8f86;
+  --shadow:     0 1px 3px rgba(93,82,75,0.10), 0 1px 2px rgba(93,82,75,0.08);
+  --shadow-lg:  0 6px 20px rgba(93,82,75,0.16);
+}
+
+/* Faint warm camel glow instead of the dark theme's cool one */
+html[data-theme="light"] body {
+  background-image: radial-gradient(ellipse at 50% 0%, rgba(166,124,82,0.06) 0%, transparent 55%);
+}
+
+/* ---- Light-mode fixes for dark-only hardcoded colors (dark stays untouched) ---- */
+/* "warning" badge: light text on the darker light-mode amber */
+html[data-theme="light"] .alert-badge.warning { color: #fff; }
+/* Button label: white reads better than cream on the bronze accent */
+html[data-theme="light"] .btn { color: #fff; }
+html[data-theme="light"] .btn:hover { box-shadow: 0 0 12px rgba(138,94,44,0.22); }
+/* Promotion no_rules/no_data chips used a white tint that's invisible on cream */
+html[data-theme="light"] .promotion-badge.no_rules,
+html[data-theme="light"] .promotion-badge.no_data { background: var(--surface-2); }
+/* Row/tab hover used a white overlay that's invisible on cream */
+html[data-theme="light"] .nav-tab:hover,
+html[data-theme="light"] .heatmap tbody tr:hover,
+html[data-theme="light"] .pivot tbody tr:hover,
+html[data-theme="light"] .example-table tbody tr:hover { background: var(--surface-2); }
+/* Danger/error borders hardcoded the dark salmon red — match the warm red */
+html[data-theme="light"] .btn-danger,
+html[data-theme="light"] .error-msg { border-color: rgba(184,58,20,0.35); }
+
+/* ===================================================================
+   THEME TOGGLE BUTTON (nav)
+   =================================================================== */
+.theme-toggle {
+  margin-left: auto;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.theme-toggle:hover {
+  color: var(--accent);
+  border-color: var(--border-2);
+  background: var(--accent-dim);
 }
 
 /* ===================================================================
@@ -382,6 +477,20 @@ main {
   padding: 20px;
 }
 
+.panel-head,
+.chart-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-head .panel-title,
+.chart-card-head h3 {
+  margin-bottom: 0;
+}
+
 .panel-title {
   font-size: 12px;
   font-weight: 600;
@@ -467,6 +576,100 @@ main {
 .trend-flat      { color: var(--muted); }
 .trend-new       { color: var(--accent); }
 
+.info-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: -4px 0 12px;
+}
+
+.inline-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--border-2);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  cursor: help;
+  flex: 0 0 auto;
+}
+
+.chart-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chart-download-btn,
+.zoom-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  border-radius: var(--radius);
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chart-download-btn:hover,
+.zoom-reset-btn:hover {
+  color: var(--accent);
+  border-color: var(--border-2);
+  background: var(--accent-dim);
+}
+
+.report-exporting .chart-download-btn,
+.report-exporting .zoom-reset-btn,
+.report-exporting .compare-chart-tools {
+  display: none !important;
+}
+
+.report-exporting .compare-table-panel {
+  overflow: visible;
+}
+
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend-zero {
+  width: 18px;
+  height: 1px;
+  background: var(--muted);
+  display: inline-block;
+}
+
 /* ===================================================================
    COMPARE CONTROLS
    =================================================================== */
@@ -519,6 +722,50 @@ select option { background: var(--surface); }
 }
 
 .btn-danger:hover { background: var(--red-dim); box-shadow: none; opacity: 1; }
+
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.btn-secondary:hover {
+  border-color: var(--border-2);
+  background: var(--accent-dim);
+  color: var(--accent);
+  box-shadow: none;
+  opacity: 1;
+}
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+.segmented button.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
 
 .confirm-dialog {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
@@ -573,6 +820,331 @@ select option { background: var(--surface); }
 }
 
 .chart-wrap { position: relative; height: 210px; }
+
+.zoom-hint {
+  color: var(--muted);
+  font-size: 11px;
+  margin: -4px 0 12px;
+}
+
+/* ===================================================================
+   COMPARE WORKFLOW
+   =================================================================== */
+.compare-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.compare-report-export-area {
+  display: grid;
+  gap: 16px;
+}
+
+.compare-toolbar,
+.compare-summary,
+.compare-chart-panel,
+.compare-table-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.compare-toolbar {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.compare-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.compare-toolbar label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.compare-selected {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 34px;
+  align-items: center;
+}
+
+.compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  color: var(--text);
+  font-size: 12px;
+  max-width: 280px;
+}
+
+.compare-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-chip-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.compare-chip-remove {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.compare-chip-remove:hover {
+  color: var(--red);
+  border-color: rgba(248,113,113,0.35);
+  background: var(--red-dim);
+}
+
+.compare-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.compare-stat {
+  padding: 14px 16px;
+  border-right: 1px solid var(--border);
+}
+
+.compare-stat:last-child { border-right: none; }
+
+.compare-stat-value {
+  font-family: var(--font-mono);
+  color: var(--text-bright);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.compare-stat-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 3px;
+}
+
+.compare-chart-panel {
+  padding: 16px;
+}
+
+.compare-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.compare-mode-tabs {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.compare-mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.compare-mode-btn.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.compare-chart-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.compare-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: -4px;
+}
+
+.shared-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.compare-big-chart {
+  position: relative;
+  height: 360px;
+}
+
+.compare-table-panel {
+  overflow-x: auto;
+}
+
+.compare-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.compare-table th {
+  background: var(--bg-raised);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.compare-table th:first-child,
+.compare-table td:first-child {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.compare-table thead th:first-child {
+  background: var(--bg-raised);
+  z-index: 2;
+}
+
+.compare-score {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.compare-delta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-left: 6px;
+}
+
+.compare-raw-score {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+
+.compare-missing {
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+.compare-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.compare-select-cell {
+  width: 42px;
+  min-width: 42px;
+  text-align: center !important;
+}
+
+.model-compare-check {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.pivot tbody tr.compare-selected-row {
+  background: var(--accent-dim);
+}
+
+.compare-tray {
+  position: sticky;
+  bottom: 16px;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.compare-tray.visible {
+  display: flex;
+}
+
+.compare-tray-count {
+  font-family: var(--font-mono);
+  color: var(--text-bright);
+  font-weight: 700;
+}
+
+.card-compare-btn {
+  margin-left: auto;
+}
+
+@media (max-width: 860px) {
+  .compare-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compare-stat:nth-child(2) { border-right: none; }
+  .compare-stat:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+  .compare-big-chart { height: 320px; }
+}
+
+@media (max-width: 560px) {
+  nav { gap: 14px; padding: 0 14px; }
+  .nav-tab { padding: 6px 8px; }
+  main { padding: 20px 14px 60px; }
+  .compare-summary { grid-template-columns: 1fr; }
+  .compare-stat,
+  .compare-stat:nth-child(2),
+  .compare-stat:nth-child(-n+2) {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .compare-stat:last-child { border-bottom: none; }
+}
 
 /* ===================================================================
    LEADERBOARD PIVOT
@@ -781,8 +1353,10 @@ select option { background: var(--surface); }
     <a class="nav-tab" href="#observatory" data-tab="observatory">Observatory</a>
     <a class="nav-tab" href="#models" data-tab="models">Models</a>
     <a class="nav-tab" href="#leaderboard" data-tab="leaderboard">Leaderboard</a>
+    <a class="nav-tab" href="#compare" data-tab="compare">Compare</a>
     <a class="nav-tab" href="#activity" data-tab="activity">Activity</a>
   </div>
+  <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light/dark theme"></button>
 </nav>
 
 <main id="app">
@@ -810,13 +1384,14 @@ function modelColor(id) {
 function scoreColor(v) {
   if (v == null) return 'var(--muted)';
   const hue = Math.round(v * 140);
-  return `hsl(${hue}, 65%, 55%)`;
+  // Much darker in light mode so green/high-score text clears WCAG on the tint (worst hue ~5.3:1).
+  return isLight() ? `hsl(${hue}, 66%, 24%)` : `hsl(${hue}, 65%, 55%)`;
 }
 
 function scoreBg(v) {
   if (v == null) return 'transparent';
   const hue = Math.round(v * 140);
-  return `hsla(${hue}, 65%, 55%, 0.12)`;
+  return isLight() ? `hsla(${hue}, 70%, 42%, 0.13)` : `hsla(${hue}, 65%, 55%, 0.12)`;
 }
 
 function gapClass(gap) {
@@ -847,7 +1422,108 @@ function destroyCharts() { _charts.forEach(c => { try { c.destroy(); } catch(_){
 
 /* Chart.js defaults */
 Chart.defaults.font.family = "'Outfit', sans-serif";
-Chart.defaults.color = '#6b7a8d';
+if (window.ChartZoom) {
+  try { Chart.register(window.ChartZoom); } catch (e) {}
+}
+
+/* ===================================================================
+   THEME (light / dark) — driven by the CSS custom properties above
+   =================================================================== */
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+function isLight() {
+  return document.documentElement.getAttribute('data-theme') === 'light';
+}
+/* Resolve the current theme's colors for Chart.js (which can't read CSS vars). */
+function chartColors() {
+  return {
+    grid:          cssVar('--border'),
+    tick:          cssVar('--muted'),
+    legend:        cssVar('--text'),
+    tooltipBg:     cssVar('--surface'),
+    tooltipBorder: cssVar('--border-2'),
+    tooltipTitle:  cssVar('--text-bright'),
+    tooltipBody:   cssVar('--muted'),
+    green:         cssVar('--green'),
+    red:           cssVar('--red'),
+  };
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  Chart.defaults.color = cssVar('--muted');
+  const btn = document.getElementById('themeToggle');
+  if (btn) {
+    // Show the theme you'll switch TO: ☀ in dark (→ light), ☾ in light (→ dark).
+    btn.textContent = theme === 'light' ? '☾' : '☀';
+    btn.title = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+  }
+}
+function toggleTheme() {
+  const next = isLight() ? 'dark' : 'light';
+  try { localStorage.setItem('eval360-theme', next); } catch (e) {}
+  applyTheme(next);
+  // Recolor in place instead of route() — preserves all page state (compare
+  // selections, toggles, an open example browser), avoids a flash + scroll jump.
+  recolorCharts();
+  restyleScoredEls();
+}
+function initTheme() {
+  // data-theme was already set pre-paint by the inline <head> script.
+  applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.addEventListener('click', toggleTheme);
+}
+/* Repaint live Chart.js instances for the current theme (canvas can't use CSS vars). */
+function recolorCharts() {
+  const cc = chartColors();
+  for (const ch of _charts) {
+    if (!ch || !ch.options) continue;
+    const o = ch.options;
+    if (o.scales) {
+      for (const ax of Object.values(o.scales)) {
+        if (ax && ax.grid && ax.grid.display !== false) ax.grid.color = cc.grid;
+        if (ax && ax.ticks) ax.ticks.color = cc.tick;
+      }
+    }
+    if (o.plugins && o.plugins.legend && o.plugins.legend.labels) o.plugins.legend.labels.color = cc.legend;
+    if (o.plugins && o.plugins.tooltip) {
+      o.plugins.tooltip.backgroundColor = cc.tooltipBg;
+      o.plugins.tooltip.borderColor = cc.tooltipBorder;
+      o.plugins.tooltip.titleColor = cc.tooltipTitle;
+      o.plugins.tooltip.bodyColor = cc.tooltipBody;
+    }
+    // Delta bar chart stashes its gap data so we can rebuild the green/red fills.
+    if (ch.$gaps && ch.data && ch.data.datasets[0]) {
+      ch.data.datasets[0].backgroundColor = ch.$gaps.map(g => {
+        const sig = g.significance || 'insufficient_data';
+        const alpha = sig === 'likely_noise' ? '66' : sig === 'insufficient_data' ? '99' : 'ff';
+        return ((g.gap || 0) >= 0 ? cc.green : cc.red) + alpha;
+      });
+      ch.data.datasets[0].borderColor = ch.$gaps.map(g => (g.gap || 0) >= 0 ? cc.green : cc.red);
+    }
+    if (ch.$compareDeltaValues && ch.data && ch.data.datasets) {
+      ch.data.datasets.forEach((ds, i) => {
+        const vals = ch.$compareDeltaValues[i] || [];
+        ds.backgroundColor = vals.map(v => v == null ? 'rgba(128,128,128,0.22)' : (v >= 0 ? cc.green + 'aa' : cc.red + 'aa'));
+        ds.borderColor = vals.map(v => v == null ? 'rgba(128,128,128,0.4)' : (v >= 0 ? cc.green : cc.red));
+      });
+    }
+    try { ch.update('none'); } catch (e) {}
+  }
+}
+/* Re-apply the JS-computed score colors (hsl gradient) to already-rendered elements.
+   CSS-var-driven inline styles re-resolve automatically; only these need a repaint. */
+function restyleScoredEls() {
+  document.querySelectorAll('[data-score]').forEach(td => {
+    const v = parseFloat(td.dataset.score);
+    if (!isNaN(v)) { td.style.color = scoreColor(v); td.style.background = scoreBg(v); }
+  });
+  document.querySelectorAll('[data-score-text]').forEach(span => {
+    const v = parseFloat(span.dataset.scoreText);
+    if (!isNaN(v)) span.style.color = scoreColor(v);
+  });
+}
 
 /* ===================================================================
    DOM HELPERS
@@ -983,6 +1659,7 @@ function renderScoreCell(td, entry, bestVal, dsName) {
     td.textContent = v.toFixed(2);
     td.style.color = scoreColor(v);
     td.style.background = scoreBg(v);
+    td.dataset.score = v;   // for in-place recolor on theme toggle
     if (bestVal != null && Math.abs(v - bestVal) < 0.0001) td.classList.add('best-in-col');
     if (entry.eval_run_id) {
       td.dataset.evalRunId = entry.eval_run_id;
@@ -1033,6 +1710,367 @@ async function api(path) {
   const r = await fetch(BASE_PATH + path);
   if (!r.ok) throw new Error('API error: ' + r.status);
   return r.json();
+}
+
+/* ===================================================================
+   COMPARE HELPERS
+   =================================================================== */
+const MAX_COMPARE_MODELS = 7;
+const DEFAULT_BASELINE_ID = 'qwen-2.5-72b';
+
+function parseHashQuery() {
+  const hash = location.hash || '';
+  const idx = hash.indexOf('?');
+  return new URLSearchParams(idx >= 0 ? hash.slice(idx + 1) : '');
+}
+
+function orderedDatasetsFromHeatmap(data) {
+  const ordered = [];
+  const seen = new Set();
+  const catOrder = Object.keys(data.categories || {}).sort();
+  for (const cat of catOrder) {
+    for (const ds of (data.categories[cat] || []).sort()) {
+      if ((data.datasets || []).includes(ds) && !seen.has(ds)) {
+        ordered.push(ds);
+        seen.add(ds);
+      }
+    }
+  }
+  for (const ds of data.datasets || []) {
+    if (!seen.has(ds)) {
+      ordered.push(ds);
+      seen.add(ds);
+    }
+  }
+  return ordered;
+}
+
+function modelById(data) {
+  const byId = new Map();
+  for (const m of data.models || []) byId.set(m.model_id, m);
+  return byId;
+}
+
+function completedScore(data, modelId, dataset) {
+  const entry = (data.matrix?.[modelId] || {})[dataset];
+  if (!entry || entry.status !== 'completed' || entry.score == null) return null;
+  return entry.score;
+}
+
+function averageScoreForModel(data, modelId, datasets) {
+  const vals = [];
+  for (const ds of datasets) {
+    const v = completedScore(data, modelId, ds);
+    if (v != null) vals.push(v);
+  }
+  if (!vals.length) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+function topModelsByAverage(data, count) {
+  const datasets = orderedDatasetsFromHeatmap(data);
+  return [...(data.models || [])]
+    .map(m => ({id: m.model_id, avg: averageScoreForModel(data, m.model_id, datasets)}))
+    .filter(x => x.avg != null)
+    .sort((a, b) => b.avg - a.avg)
+    .slice(0, count)
+    .map(x => x.id);
+}
+
+function buildCompareHash(state) {
+  const p = new URLSearchParams();
+  if (state.models.length) p.set('models', state.models.join(','));
+  if (state.baseline) p.set('baseline', state.baseline);
+  if (state.suite) p.set('suite', state.suite);
+  if (state.commonOnly) p.set('common_only', 'true');
+  if (state.benchmark) p.set('benchmark', state.benchmark);
+  if (state.mode && state.mode !== 'bars') p.set('mode', state.mode);
+  if (state.scale && state.scale !== 'normalized') p.set('scale', state.scale);
+  const qs = p.toString();
+  return '#compare' + (qs ? '?' + qs : '');
+}
+
+function setCompareUrl(state) {
+  const next = buildCompareHash(state);
+  if (location.hash !== next) history.replaceState(null, '', next);
+}
+
+function signed(v) {
+  if (v == null) return '\u2014';
+  return (v > 0 ? '+' : '') + v.toFixed(3);
+}
+
+function formatScore(v) {
+  return v == null ? '\u2014' : v.toFixed(3);
+}
+
+function metricRangeForDataset(data, dataset, modelIds) {
+  const vals = [];
+  const ids = modelIds && modelIds.length ? modelIds : Object.keys(data.matrix || {});
+  for (const mid of ids) {
+    const entry = (data.matrix?.[mid] || {})[dataset];
+    if (entry && entry.status === 'completed' && entry.score != null) vals.push(entry.score);
+  }
+  if (!vals.length) return {min: 0, max: 1, source: 'no completed scores'};
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  if (min >= 0 && max <= 1) return {min: 0, max: 1, source: 'native 0-1 scale'};
+  if (Math.abs(max - min) < 1e-12) return {min: min - 0.5, max: max + 0.5, source: 'view-relative scale'};
+  return {min, max, source: 'view-relative scale'};
+}
+
+function normalizeScore(raw, range) {
+  if (raw == null) return null;
+  const span = range.max - range.min;
+  if (!span) return 0.5;
+  return Math.max(0, Math.min(1, (raw - range.min) / span));
+}
+
+function displayScoreFor(data, modelId, dataset, scale, modelIds) {
+  const raw = completedScore(data, modelId, dataset);
+  if (raw == null) return null;
+  if (scale === 'raw') return raw;
+  return normalizeScore(raw, metricRangeForDataset(data, dataset, modelIds));
+}
+
+function averageDisplayedScoreForModel(data, modelId, datasets, scale, modelIds) {
+  const vals = [];
+  for (const ds of datasets) {
+    const v = displayScoreFor(data, modelId, ds, scale, modelIds);
+    if (v != null) vals.push(v);
+  }
+  if (!vals.length) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+function primaryScoreMap(scores) {
+  const out = {};
+  for (const s of scores || []) {
+    if (!s.is_primary) continue;
+    const cur = out[s.dataset_name];
+    if (!cur || s.metric_value > cur.metric_value) out[s.dataset_name] = s;
+  }
+  return out;
+}
+
+function computeSignificanceFromCi(mVal, mLo, mHi, bVal, bLo, bHi) {
+  if (mLo == null || mHi == null || bLo == null || bHi == null) return 'insufficient_data';
+  if (mLo > bHi || bLo > mHi) return 'likely_real';
+  const overlap = Math.min(mHi, bHi) - Math.max(mLo, bLo);
+  const smallerWidth = Math.min(mHi - mLo, bHi - bLo);
+  if (smallerWidth > 0 && overlap / smallerWidth > 0.5) return 'likely_noise';
+  return 'uncertain';
+}
+
+function sharedDatasetStats(data, modelIds, benchmark) {
+  const datasets = benchmark ? [benchmark] : orderedDatasetsFromHeatmap(data);
+  const shared = datasets.filter(ds => modelIds.every(mid => completedScore(data, mid, ds) != null));
+  return {shared: shared.length, total: datasets.length};
+}
+
+function addInfoIcon(title) {
+  return el('span', {class: 'inline-help', title}, '?');
+}
+
+function makeDeltaLegend() {
+  const legend = el('div', {class: 'chart-legend'});
+  const ahead = el('span', {class: 'legend-item'});
+  ahead.appendChild(el('span', {class: 'legend-swatch', style: 'background:var(--green)'}));
+  ahead.appendChild(document.createTextNode('higher than baseline'));
+  const behind = el('span', {class: 'legend-item'});
+  behind.appendChild(el('span', {class: 'legend-swatch', style: 'background:var(--red)'}));
+  behind.appendChild(document.createTextNode('lower than baseline'));
+  const zero = el('span', {class: 'legend-item'});
+  zero.appendChild(el('span', {class: 'legend-zero'}));
+  zero.appendChild(document.createTextNode('equal'));
+  legend.appendChild(ahead);
+  legend.appendChild(behind);
+  legend.appendChild(zero);
+  return legend;
+}
+
+function safeFilename(s) {
+  return String(s || 'chart').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'chart';
+}
+
+function timestampForFilename(d = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear()
+    + pad(d.getMonth() + 1)
+    + pad(d.getDate())
+    + '-'
+    + pad(d.getHours())
+    + pad(d.getMinutes())
+    + pad(d.getSeconds());
+}
+
+function triggerPngDownload(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  // Some embedded browsers ignore `download`; target gives them a chance to
+  // open the generated PNG instead of silently doing nothing.
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function downloadChartPng(chart, name, btn) {
+  if (!chart || !chart.canvas) return;
+  const filename = safeFilename(name) + '.png';
+  const originalText = btn ? btn.textContent : null;
+  if (btn) {
+    btn.textContent = 'Exporting...';
+    btn.disabled = true;
+  }
+
+  function finish(label) {
+    if (!btn) return;
+    btn.textContent = label || originalText || 'PNG';
+    window.setTimeout(() => {
+      btn.textContent = originalText || 'PNG';
+      btn.disabled = false;
+    }, 900);
+  }
+
+  function fallbackToDataUrl() {
+    try {
+      triggerPngDownload(chart.toBase64Image('image/png', 1), filename);
+      finish('PNG ready');
+    } catch (e) {
+      finish('Failed');
+    }
+  }
+
+  try {
+    chart.update('none');
+    chart.canvas.toBlob((blob) => {
+      if (!blob) {
+        fallbackToDataUrl();
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      triggerPngDownload(url, filename);
+      window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+      finish('PNG ready');
+    }, 'image/png', 1);
+  } catch (e) {
+    fallbackToDataUrl();
+  }
+}
+
+function bindDownloadButton(btn, chartGetter, nameGetter) {
+  btn.addEventListener('click', () => downloadChartPng(chartGetter(), nameGetter(), btn));
+}
+
+function waitForPaint() {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+async function downloadReportPng(node, name, btn) {
+  if (!node) return;
+  const filename = safeFilename(name || 'report') + '-' + timestampForFilename() + '.png';
+  const originalText = btn ? btn.textContent : null;
+  if (btn) {
+    btn.textContent = 'Exporting...';
+    btn.disabled = true;
+  }
+
+  function finish(label) {
+    if (!btn) return;
+    btn.textContent = label || originalText || 'Report PNG';
+    window.setTimeout(() => {
+      btn.textContent = originalText || 'Report PNG';
+      btn.disabled = false;
+    }, 900);
+  }
+
+  if (typeof html2canvas !== 'function') {
+    console.error('html2canvas is not available for report export.');
+    finish('Failed');
+    return;
+  }
+
+  let reportCanvas = null;
+  try {
+    node.classList.add('report-exporting');
+    await waitForPaint();
+    const rect = node.getBoundingClientRect();
+    const exportWidth = Math.ceil(Math.max(node.scrollWidth, rect.width));
+    const exportHeight = Math.ceil(Math.max(node.scrollHeight, rect.height));
+    const exportScale = Math.min(4, Math.max(3, (window.devicePixelRatio || 1) * 2));
+    reportCanvas = await html2canvas(node, {
+      backgroundColor: cssVar('--bg'),
+      scale: exportScale,
+      width: exportWidth,
+      height: exportHeight,
+      windowWidth: Math.max(document.documentElement.clientWidth, exportWidth),
+      windowHeight: Math.max(document.documentElement.clientHeight, exportHeight),
+      useCORS: true,
+      logging: false,
+    });
+  } catch (e) {
+    console.error('Failed to export report PNG:', e);
+    finish('Failed');
+    return;
+  } finally {
+    node.classList.remove('report-exporting');
+  }
+
+  function fallbackToDataUrl() {
+    try {
+      triggerPngDownload(reportCanvas.toDataURL('image/png', 1), filename);
+      finish('Report ready');
+    } catch (e) {
+      console.error('Failed to download report PNG:', e);
+      finish('Failed');
+    }
+  }
+
+  try {
+    reportCanvas.toBlob((blob) => {
+      if (!blob) {
+        fallbackToDataUrl();
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      triggerPngDownload(url, filename);
+      window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+      finish('Report ready');
+    }, 'image/png', 1);
+  } catch (e) {
+    fallbackToDataUrl();
+  }
+}
+
+function zoomPluginOptions() {
+  return {
+    zoom: {
+      wheel: {enabled: true},
+      pinch: {enabled: true},
+      drag: {
+        enabled: true,
+        borderColor: cssVar('--accent'),
+        borderWidth: 1,
+        backgroundColor: isLight() ? 'rgba(138,94,44,0.12)' : 'rgba(79,172,254,0.12)',
+      },
+      mode: 'xy',
+    },
+    pan: {enabled: true, mode: 'xy', modifierKey: 'shift'},
+    limits: {
+      x: {min: 'original', max: 'original'},
+      y: {min: 'original', max: 'original'},
+      r: {min: 'original', max: 'original'},
+    },
+  };
+}
+
+function resetChartZoom(chart) {
+  if (!chart) return;
+  if (typeof chart.resetZoom === 'function') chart.resetZoom();
 }
 
 /* ===================================================================
@@ -1332,6 +2370,9 @@ async function route() {
     } else if (hash === '#leaderboard') {
       setTab('leaderboard');
       await viewLeaderboard(app);
+    } else if (hash.startsWith('#compare')) {
+      setTab('compare');
+      await viewCompare(app);
     } else if (hash === '#activity') {
       setTab('activity');
       await viewActivity(app);
@@ -1350,6 +2391,7 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
+window.addEventListener('DOMContentLoaded', initTheme);
 window.addEventListener('DOMContentLoaded', route);
 
 /* ===================================================================
@@ -1571,6 +2613,20 @@ async function viewModels(app) {
       }
     }).catch(() => {});
 
+    const compareBtn = el('button', {class:'btn btn-secondary btn-small card-compare-btn', type:'button'}, 'Compare');
+    compareBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      location.hash = buildCompareHash({
+        models: [m.model_id],
+        baseline: m.model_id,
+        suite: '',
+        commonOnly: false,
+        benchmark: '',
+        mode: 'bars',
+      });
+    });
+    header.appendChild(compareBtn);
+
     card.appendChild(el('div', {class:'card-meta'},
       'Owner: ' + m.owner + ' \u00b7 ' + m.checkpoint_count + ' checkpoints \u00b7 ' + m.dataset_count + ' datasets'));
 
@@ -1587,6 +2643,7 @@ async function viewModels(app) {
       if (status === 'completed' && v != null) {
         valSpan = el('span', {class:'ds-val'}, v.toFixed(2));
         valSpan.style.color = scoreColor(v);
+        valSpan.dataset.scoreText = v;   // for in-place recolor on theme toggle
         if (entry.eval_run_id) {
           chip.style.cursor = 'pointer';
           chip.addEventListener('click', (e) => {
@@ -1734,37 +2791,39 @@ async function viewModelDetail(app, modelId) {
   }
   wrap.appendChild(promotionWrap);
 
-  // Diagnostic panels: delta bar chart + gap analysis
+  // Diagnostic panels: fixed-baseline difference + gap table
   const diagGrid = el('div', {class:'diag-grid'});
+  const baselineModels = allModels.models.filter(m => m.model_type === 'baseline');
+  const defaultBaseline = baselineModels.find(m => m.model_id === DEFAULT_BASELINE_ID) || baselineModels[0];
+  const sourceScoreRows = Object.entries(diagData.scores || {}).sort((a, b) => a[0].localeCompare(b[0]));
 
-  // -- Delta Bar Chart --
+  // -- Difference Bar Chart --
   const deltaPanel = el('div', {class:'panel'});
-  const deltaPanelTitle = el('div', {class:'panel-title'}, 'Gap Analysis vs Best Baseline');
-  deltaPanel.appendChild(deltaPanelTitle);
+  const deltaHead = el('div', {class:'panel-head'});
+  const deltaPanelTitle = el('div', {class:'panel-title'}, 'Difference vs Baseline');
+  const deltaActions = el('div', {class:'chart-actions'});
+  const deltaDownloadBtn = el('button', {class:'chart-download-btn', type:'button'}, 'PNG');
+  deltaActions.appendChild(deltaDownloadBtn);
+  deltaHead.appendChild(deltaPanelTitle);
+  deltaHead.appendChild(deltaActions);
+  deltaPanel.appendChild(deltaHead);
+  deltaPanel.appendChild(el('div', {class:'info-note'}, 'Difference is current model score minus the selected fixed baseline on the same benchmark.'));
 
-  // Reference selector
-  const refSelectWrap = el('div', {style:'margin-bottom:12px'});
-  const refLabel = el('label', {style:'font-size:12px;color:var(--muted);margin-right:8px'}, 'Reference:');
-  refSelectWrap.appendChild(refLabel);
+  const refSelectWrap = el('div', {style:'margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;'});
+  refSelectWrap.appendChild(el('label', {style:'font-size:12px;color:var(--muted);'}, 'Baseline'));
   const refSelect = document.createElement('select');
   refSelect.style.fontSize = '12px';
-  const defaultRefOpt = document.createElement('option');
-  defaultRefOpt.value = '__best_baseline__';
-  defaultRefOpt.textContent = 'Best baseline (default)';
-  refSelect.appendChild(defaultRefOpt);
-  const sizeMatchedOpt = document.createElement('option');
-  sizeMatchedOpt.value = '__size_matched__';
-  sizeMatchedOpt.textContent = 'Size-matched (\u00b150%)';
-  refSelect.appendChild(sizeMatchedOpt);
-  for (const m of allModels.models) {
-    if (m.model_id === modelId) continue;
+  for (const m of baselineModels) {
     const opt = document.createElement('option');
     opt.value = m.model_id;
-    opt.textContent = m.display_name + ' (' + m.model_type + ')';
+    opt.textContent = m.display_name;
     refSelect.appendChild(opt);
   }
+  if (defaultBaseline) refSelect.value = defaultBaseline.model_id;
   refSelectWrap.appendChild(refSelect);
+  refSelectWrap.appendChild(addInfoIcon('Baseline is fixed across all benchmarks. Missing baseline results stay missing instead of switching to another model.'));
   deltaPanel.appendChild(refSelectWrap);
+  deltaPanel.appendChild(makeDeltaLegend());
 
   const deltaWrap = el('div', {class:'delta-bar-wrap'});
   const deltaCanvas = document.createElement('canvas');
@@ -1773,238 +2832,59 @@ async function viewModelDetail(app, modelId) {
   diagGrid.appendChild(deltaPanel);
 
   let deltaChart = null;
+  bindDownloadButton(deltaDownloadBtn, () => deltaChart, () => deltaPanelTitle.textContent);
 
-  // -- Gap Analysis --
+  // -- Gap Analysis Table --
   const gapPanel = el('div', {class:'panel'});
-  gapPanel.appendChild(el('div', {class:'panel-title'}, 'Gap Analysis vs Best Baseline'));
+  const gapHead = el('div', {class:'panel-head'});
+  const gapPanelTitle = el('div', {class:'panel-title'}, 'Difference Table');
+  gapHead.appendChild(gapPanelTitle);
+  gapPanel.appendChild(gapHead);
+  gapPanel.appendChild(el('div', {class:'info-note'}, 'Green means this model is above the selected baseline; red means it is below it.'));
   const gapTable = document.createElement('table');
   gapTable.className = 'gap-table';
 
   const gHead = document.createElement('thead');
   const gHRow = document.createElement('tr');
-  ['Benchmark', 'Score', 'Best Baseline', 'Gap', 'Trend', 'Sig.'].forEach(c => gHRow.appendChild(el('th', null, c)));
+  ['Benchmark', 'Score', 'Baseline', 'Difference', 'Trend', 'Sig.'].forEach(c => gHRow.appendChild(el('th', null, c)));
   gHead.appendChild(gHRow);
   gapTable.appendChild(gHead);
-
   const gBody = document.createElement('tbody');
-  const sortedDs = Object.entries(diagData.scores).sort((a, b) => (a[1].gap || 0) - (b[1].gap || 0));
-
-  for (const [ds, info] of sortedDs) {
-    const tr = document.createElement('tr');
-
-    const dsTd = el('td', {style:'font-weight:500;color:var(--text-bright)'});
-    dsTd.appendChild(document.createTextNode(ds));
-    if (info.metric_name) {
-      dsTd.appendChild(document.createTextNode(' '));
-      dsTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:11px'}, info.metric_name));
-    }
-    tr.appendChild(dsTd);
-
-    const valTd = el('td', {class:'gap-value'});
-    valTd.textContent = info.value.toFixed(4);
-    valTd.style.color = scoreColor(info.value);
-    if (info.sample_count != null) {
-      valTd.appendChild(document.createTextNode(' '));
-      valTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:10px'}, 'n=' + info.sample_count));
-    }
-    tr.appendChild(valTd);
-
-    const blTd = document.createElement('td');
-    if (info.baseline_best != null) {
-      blTd.appendChild(el('span', {class:'gap-value', style:'color:var(--muted)'}, info.baseline_best.toFixed(4)));
-      blTd.appendChild(document.createTextNode(' '));
-      blTd.appendChild(el('span', {style:'font-size:11px;color:var(--muted)'}, info.baseline_model || ''));
-    } else {
-      blTd.textContent = '\u2014';
-    }
-    tr.appendChild(blTd);
-
-    const gapTd = el('td', {class:'gap-value ' + gapClass(info.gap)});
-    gapTd.textContent = info.gap != null ? (info.gap > 0 ? '+' : '') + info.gap.toFixed(4) : '\u2014';
-    tr.appendChild(gapTd);
-
-    const trendTd = el('td', {class:'trend-icon trend-' + info.trend});
-    trendTd.textContent = trendIcon(info.trend);
-    tr.appendChild(trendTd);
-
-    const sigTd = el('td', {style: 'text-align:center'});
-    const sig = info.significance || 'insufficient_data';
-    const sigMap = {
-      likely_real: {icon: '\u25cf', class: info.gap >= 0 ? 'gap-positive' : 'gap-negative', tip: 'CIs do not overlap \u2014 likely real'},
-      likely_noise: {icon: '~', class: 'gap-neutral', tip: 'CIs overlap significantly \u2014 likely noise'},
-      uncertain: {icon: '?', class: 'trend-flat', tip: 'Partial CI overlap \u2014 uncertain'},
-      insufficient_data: {icon: '\u2014', class: 'gap-neutral', tip: 'Insufficient data for CI comparison'},
-    };
-    const s = sigMap[sig] || sigMap.insufficient_data;
-    sigTd.textContent = s.icon;
-    sigTd.className = s.class;
-    sigTd.title = s.tip;
-    sigTd.style.cursor = 'help';
-    tr.appendChild(sigTd);
-
-    gBody.appendChild(tr);
-  }
-
   gapTable.appendChild(gBody);
   gapPanel.appendChild(gapTable);
   diagGrid.appendChild(gapPanel);
   wrap.appendChild(diagGrid);
 
-  // Render delta bar chart
-  function buildDeltaChart(refScores, refName) {
-    // refScores: { datasetName: score } for the reference
-    const gaps = sortedDs.map(([ds, info]) => {
-      const myScore = info.value;
-      const refScore = refScores[ds];
-      if (refScore == null || myScore == null) return { ds, gap: null, significance: info.significance };
-      return { ds, gap: myScore - refScore, significance: info.significance };
-    }).filter(g => g.gap != null).sort((a, b) => a.gap - b.gap); // worst first
-
-    if (deltaChart) { deltaChart.destroy(); _charts = _charts.filter(c => c !== deltaChart); }
-
-    deltaPanelTitle.textContent = 'Gap Analysis vs ' + refName;
-
-    const barColors = gaps.map(g => {
-      const gap = g.gap || 0;
-      const sig = g.significance || 'insufficient_data';
-      const alpha = sig === 'likely_noise' ? '66' : sig === 'insufficient_data' ? '99' : 'ff';
-      return gap >= 0 ? '#34d399' + alpha : '#f87171' + alpha;
+  function sortedGapEntries(gapData) {
+    return Object.entries(gapData).sort((a, b) => {
+      const av = a[1].gap == null ? Infinity : a[1].gap;
+      const bv = b[1].gap == null ? Infinity : b[1].gap;
+      return av - bv;
     });
-
-    deltaChart = new Chart(deltaCanvas, {
-      type: 'bar',
-      data: {
-        labels: gaps.map(g => g.ds),
-        datasets: [{
-          label: 'Gap',
-          data: gaps.map(g => g.gap),
-          backgroundColor: barColors,
-          borderColor: gaps.map(g => g.gap >= 0 ? '#34d399' : '#f87171'),
-          borderWidth: 1,
-          borderRadius: 3,
-        }],
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            grid: { color: '#1e2733' },
-            ticks: { color: '#6b7a8d', font: { size: 11, family: 'JetBrains Mono' } },
-          },
-          y: {
-            grid: { display: false },
-            ticks: { color: '#8b9bb0', font: { size: 11, family: 'Outfit' } },
-          },
-        },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#141a22', borderColor: '#2a3444', borderWidth: 1,
-            titleColor: '#f0f4f8', bodyColor: '#8b9bb0',
-            callbacks: { label(ctx) { const v = ctx.raw; return (v > 0 ? '+' : '') + v.toFixed(4); } },
-          },
-        },
-      },
-    });
-    _charts.push(deltaChart);
   }
 
-  // Default: best baseline reference
-  const defaultRefScores = {};
-  for (const [ds, info] of sortedDs) {
-    defaultRefScores[ds] = info.baseline_best;
-  }
-  buildDeltaChart(defaultRefScores, 'Best Baseline');
-
-  // Reference selector change handler
-  refSelect.addEventListener('change', async () => {
-    const refId = refSelect.value;
-    if (refId === '__best_baseline__') {
-      buildDeltaChart(defaultRefScores, 'Best Baseline');
-      // Also rebuild gap table with default data
-      rebuildGapTable(diagData.scores);
-    } else if (refId === '__size_matched__') {
-      // Size-matched: find models within +/-50% param_count of primary model
-      const primaryParams = model.param_count;
-      let sizeMatchedRef = null;
-      if (primaryParams) {
-        const lo = primaryParams * 0.5;
-        const hi = primaryParams * 1.5;
-        const candidates = allModels.models.filter(m =>
-          m.model_id !== modelId && m.param_count && m.param_count >= lo && m.param_count <= hi
-        );
-        // Pick candidate with best average score from heatmap
-        if (candidates.length > 0) {
-          // Fetch heatmap to get average scores
-          try {
-            const hm = await api('/api/heatmap');
-            let bestAvg = -1;
-            for (const c of candidates) {
-              const scores = hm.matrix[c.model_id] || {};
-              const vals = Object.values(scores).map(e => e && e.score != null ? e.score : null).filter(v => v != null);
-              const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : -1;
-              if (avg > bestAvg) { bestAvg = avg; sizeMatchedRef = c; }
-            }
-          } catch (e) {
-            // Fallback: pick first candidate
-            sizeMatchedRef = candidates[0];
-          }
-        }
-      }
-      if (sizeMatchedRef) {
-        try {
-          const refData = await api('/api/models/' + encodeURIComponent(sizeMatchedRef.model_id) + '/scores');
-          const refScores = {};
-          const refName = sizeMatchedRef.display_name + ' (size-matched)';
-          for (const s of refData.scores) {
-            if (s.is_primary) refScores[s.dataset_name] = s.metric_value;
-          }
-          buildDeltaChart(refScores, refName);
-          const newGapData = {};
-          for (const [ds, info] of sortedDs) {
-            const refVal = refScores[ds];
-            const gap = (refVal != null && info.value != null) ? info.value - refVal : null;
-            newGapData[ds] = { ...info, baseline_best: refVal, baseline_model: refName, gap };
-          }
-          rebuildGapTable(newGapData);
-        } catch (e) {
-          console.error('Failed to fetch size-matched reference scores:', e);
-        }
-      } else {
-        // No size-matched model found, fall back to best baseline
-        buildDeltaChart(defaultRefScores, 'Best Baseline (no size match)');
-        rebuildGapTable(diagData.scores);
-      }
-    } else {
-      try {
-        const refData = await api('/api/models/' + encodeURIComponent(refId) + '/scores');
-        const refScores = {};
-        const refName = allModels.models.find(m => m.model_id === refId)?.display_name || refId;
-        for (const s of refData.scores) {
-          if (s.is_primary) refScores[s.dataset_name] = s.metric_value;
-        }
-        buildDeltaChart(refScores, refName);
-        // Rebuild gap table with new reference
-        const newGapData = {};
-        for (const [ds, info] of sortedDs) {
-          const refVal = refScores[ds];
-          const gap = (refVal != null && info.value != null) ? info.value - refVal : null;
-          newGapData[ds] = { ...info, baseline_best: refVal, baseline_model: refName, gap };
-        }
-        rebuildGapTable(newGapData);
-      } catch (e) {
-        console.error('Failed to fetch reference scores:', e);
-      }
+  function buildGapData(refScoreMap, refName) {
+    const out = {};
+    for (const [ds, info] of sourceScoreRows) {
+      const ref = refScoreMap[ds];
+      const refVal = ref ? ref.metric_value : null;
+      const gap = refVal != null && info.value != null ? info.value - refVal : null;
+      out[ds] = {
+        ...info,
+        baseline_best: refVal,
+        baseline_model: refName,
+        gap,
+        significance: ref
+          ? computeSignificanceFromCi(info.value, info.ci_lower, info.ci_upper, ref.metric_value, ref.ci_lower, ref.ci_upper)
+          : 'insufficient_data',
+      };
     }
-  });
+    return out;
+  }
 
-  // Gap table rebuild function (for reference selector changes)
-  function rebuildGapTable(gapData) {
+  function renderGapTable(gapData) {
     clearNode(gBody);
-    const newSorted = Object.entries(gapData).sort((a, b) => (a[1].gap || 0) - (b[1].gap || 0));
-    for (const [ds, info] of newSorted) {
+    for (const [ds, info] of sortedGapEntries(gapData)) {
       const tr = document.createElement('tr');
 
       const dsTd = el('td', {style:'font-weight:500;color:var(--text-bright)'});
@@ -2018,6 +2898,7 @@ async function viewModelDetail(app, modelId) {
       const valTd = el('td', {class:'gap-value'});
       valTd.textContent = info.value.toFixed(4);
       valTd.style.color = scoreColor(info.value);
+      valTd.dataset.scoreText = info.value;   // for in-place recolor on theme toggle
       if (info.sample_count != null) {
         valTd.appendChild(document.createTextNode(' '));
         valTd.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:10px'}, 'n=' + info.sample_count));
@@ -2061,6 +2942,83 @@ async function viewModelDetail(app, modelId) {
     }
   }
 
+  function buildDeltaChartFromGapData(gapData, refName) {
+    const gaps = sortedGapEntries(gapData)
+      .map(([ds, info]) => ({ ds, gap: info.gap, significance: info.significance }))
+      .filter(g => g.gap != null);
+
+    if (deltaChart) { deltaChart.destroy(); _charts = _charts.filter(c => c !== deltaChart); }
+    deltaPanelTitle.textContent = 'Difference vs ' + refName;
+    gapPanelTitle.textContent = 'Difference vs ' + refName;
+
+    const cc = chartColors();
+    const barColors = gaps.map(g => {
+      const sig = g.significance || 'insufficient_data';
+      const alpha = sig === 'likely_noise' ? '66' : sig === 'insufficient_data' ? '99' : 'ff';
+      return ((g.gap || 0) >= 0 ? cc.green : cc.red) + alpha;
+    });
+
+    deltaChart = new Chart(deltaCanvas, {
+      type: 'bar',
+      data: {
+        labels: gaps.map(g => g.ds),
+        datasets: [{
+          label: 'Difference',
+          data: gaps.map(g => g.gap),
+          backgroundColor: barColors,
+          borderColor: gaps.map(g => g.gap >= 0 ? cc.green : cc.red),
+          borderWidth: 1,
+          borderRadius: 3,
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            grid: { color: cc.grid },
+            ticks: { color: cc.tick, font: { size: 11, family: 'JetBrains Mono' } },
+          },
+          y: {
+            grid: { display: false },
+            ticks: { color: cc.tick, font: { size: 11, family: 'Outfit' } },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: cc.tooltipBg, borderColor: cc.tooltipBorder, borderWidth: 1,
+            titleColor: cc.tooltipTitle, bodyColor: cc.tooltipBody,
+            callbacks: { label(ctx) { const v = ctx.raw; return 'model - baseline: ' + (v > 0 ? '+' : '') + v.toFixed(4); } },
+          },
+        },
+      },
+    });
+    _charts.push(deltaChart);
+    deltaChart.$gaps = gaps;
+  }
+
+  async function renderSelectedBaseline(refId) {
+    const refModel = baselineModels.find(m => m.model_id === refId);
+    if (!refModel) {
+      renderGapTable({});
+      return;
+    }
+    const refData = await api('/api/models/' + encodeURIComponent(refId) + '/scores');
+    const gapData = buildGapData(primaryScoreMap(refData.scores), refModel.display_name);
+    renderGapTable(gapData);
+    buildDeltaChartFromGapData(gapData, refModel.display_name);
+  }
+
+  refSelect.addEventListener('change', async () => {
+    try { await renderSelectedBaseline(refSelect.value); }
+    catch (e) { console.error('Failed to fetch baseline scores:', e); }
+  });
+
+  if (defaultBaseline) await renderSelectedBaseline(defaultBaseline.model_id);
+  else renderGapTable({});
+
   // Compare controls
   const compareBar = el('div', {class:'compare-bar'});
   compareBar.appendChild(el('label', null, 'Compare with...'));
@@ -2079,25 +3037,35 @@ async function viewModelDetail(app, modelId) {
   const commonToggle = document.createElement('input');
   commonToggle.type = 'checkbox';
   commonToggle.id = 'common-only';
-  const commonLabel = el('label', {for: 'common-only', style: 'color:var(--muted);font-size:12px;cursor:pointer'}, 'Common benchmarks only');
+  const commonLabel = el('label', {
+    for: 'common-only',
+    style: 'color:var(--muted);font-size:12px;cursor:pointer',
+    title: 'Only draw benchmarks where every selected model has completed results.',
+  }, 'Shared benchmarks only');
   compareBar.appendChild(commonToggle);
   compareBar.appendChild(commonLabel);
+  compareBar.appendChild(addInfoIcon('Shared benchmarks only avoids comparing across missing benchmark coverage. It is mainly useful for strict model-to-model comparisons.'));
   const updateBtn = el('button', {class:'btn'}, 'Update Charts');
   compareBar.appendChild(updateBtn);
+  const fullCompareBtn = el('button', {class:'btn btn-secondary'}, 'Open full comparison');
+  compareBar.appendChild(fullCompareBtn);
   wrap.appendChild(compareBar);
 
   // Section head for training curves
   const curvesHead = el('div', {class:'section-head', style:'display:flex;align-items:center;justify-content:space-between'});
   curvesHead.appendChild(document.createTextNode('Training Curves'));
   const bandControls = el('span', {style:'display:flex;align-items:center'});
+  const resetZoomBtn = el('button', {class:'zoom-reset-btn', type:'button'}, 'Reset zoom');
   const bandToggle = document.createElement('input');
   bandToggle.type = 'checkbox';
   bandToggle.id = 'show-bands';
   const bandLabel = el('label', {for: 'show-bands', style: 'color:var(--muted);font-size:12px;cursor:pointer;margin-left:16px'}, 'Show uncertainty');
+  bandControls.appendChild(resetZoomBtn);
   bandControls.appendChild(bandToggle);
   bandControls.appendChild(bandLabel);
   curvesHead.appendChild(bandControls);
   wrap.appendChild(curvesHead);
+  wrap.appendChild(el('div', {class:'zoom-hint'}, 'Steps are most meaningful within the same training run. Drag any rectangle to zoom, use the wheel to zoom, shift-drag to pan, double click or Reset zoom to restore.'));
 
   // Chart grid
   const chartGrid = el('div', {class:'chart-grid'});
@@ -2125,6 +3093,7 @@ async function viewModelDetail(app, modelId) {
     _charts.filter(c => !keep.includes(c)).forEach(c => { try { c.destroy(); } catch(_){} });
     _charts = [...keep];
     clearNode(chartGrid);
+    const cc = chartColors();
 
     const useCommonOnly = commonToggle.checked;
     const showBands = bandToggle.checked;
@@ -2161,7 +3130,13 @@ async function viewModelDetail(app, modelId) {
         titleEl.appendChild(document.createTextNode(' '));
         titleEl.appendChild(el('span', {style:'font-weight:400;color:var(--muted);font-size:11px'}, metricName));
       }
-      card.appendChild(titleEl);
+      const cardHead = el('div', {class:'chart-card-head'});
+      const cardActions = el('div', {class:'chart-actions'});
+      const chartDownloadBtn = el('button', {class:'chart-download-btn', type:'button'}, 'PNG');
+      cardActions.appendChild(chartDownloadBtn);
+      cardHead.appendChild(titleEl);
+      cardHead.appendChild(cardActions);
+      card.appendChild(cardHead);
       const cw = el('div', {class:'chart-wrap'});
       const canvas = document.createElement('canvas');
       cw.appendChild(canvas);
@@ -2260,29 +3235,36 @@ async function viewModelDetail(app, modelId) {
           animation: { duration: 300 },
           interaction: { mode: 'index', intersect: false },
           scales: {
-            x: { type:'linear', ticks:{color:'#6b7a8d', maxTicksLimit:6, font:{size:11}}, grid:{color:'#1e2733'} },
-            y: { min:yMin, max:yMax, ticks:{color:'#6b7a8d', maxTicksLimit:5, font:{size:11,family:'JetBrains Mono'}}, grid:{color:'#1e2733'} },
+            x: { type:'linear', ticks:{color:cc.tick, maxTicksLimit:6, font:{size:11}}, grid:{color:cc.grid} },
+            y: { min:yMin, max:yMax, ticks:{color:cc.tick, maxTicksLimit:5, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid} },
           },
           plugins: {
             legend: {
               labels:{
-                color:'#d4dce8', boxWidth:12, font:{size:11},
+                color:cc.legend, boxWidth:12, font:{size:11},
                 filter: function(item, chartData) {
                   return !chartData.datasets[item.datasetIndex]._isCIBand;
                 },
               },
             },
             tooltip: {
-              backgroundColor:'#141a22', borderColor:'#2a3444', borderWidth:1, titleColor:'#f0f4f8', bodyColor:'#8b9bb0',
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
               callbacks: { label(ctx) { if (ctx.dataset._isCIBand) return null; const r=ctx.raw; return ctx.dataset.label+': '+r.y.toFixed(4)+(r.x!=null?' (step '+r.x+')':''); } },
               filter: function(tooltipItem) { return !tooltipItem.dataset._isCIBand; },
             },
+            zoom: zoomPluginOptions(),
           },
         },
       });
       _charts.push(chart);
+      canvas.addEventListener('dblclick', () => resetChartZoom(chart));
+      bindDownloadButton(chartDownloadBtn, () => chart, () => model.display_name + '-' + dsName + '-curve');
     }
   }
+
+  resetZoomBtn.addEventListener('click', () => {
+    _charts.forEach(ch => { if (ch !== deltaChart) resetChartZoom(ch); });
+  });
 
   await renderCurves([]);
 
@@ -2294,9 +3276,799 @@ async function viewModelDetail(app, modelId) {
     await renderCurves(getSelectedCompareIds());
   });
 
+  fullCompareBtn.addEventListener('click', () => {
+    const ids = [modelId, ...getSelectedCompareIds()].slice(0, MAX_COMPARE_MODELS);
+    location.hash = buildCompareHash({
+      models: ids,
+      baseline: modelId,
+      suite: '',
+      commonOnly: false,
+      benchmark: '',
+      mode: 'bars',
+    });
+  });
+
   bandToggle.addEventListener('change', async () => {
     await renderCurves(getSelectedCompareIds());
   });
+}
+
+/* ===================================================================
+   VIEW: COMPARE MODELS
+   =================================================================== */
+async function viewCompare(app) {
+  clearNode(app);
+  const wrap = el('div', {class:'page-enter'});
+  app.appendChild(wrap);
+  wrap.appendChild(el('div', {class:'loading'}, 'Loading comparison...'));
+
+  const params = parseHashQuery();
+  const state = {
+    models: [],
+    baseline: params.get('baseline') || '',
+    suite: params.get('suite') || '',
+    commonOnly: params.get('common_only') === 'true',
+    benchmark: params.get('benchmark') || '',
+    mode: ['delta', 'radar', 'curves'].includes(params.get('mode')) ? params.get('mode') : 'bars',
+    scale: params.get('scale') === 'raw' ? 'raw' : 'normalized',
+  };
+
+  async function loadHeatmap(suiteId) {
+    if (!suiteId) return api('/api/heatmap');
+    try {
+      return await api('/api/heatmap?suite_id=' + encodeURIComponent(suiteId));
+    } catch (e) {
+      state.suite = '';
+      return api('/api/heatmap');
+    }
+  }
+
+  let [data, suitesData] = await Promise.all([loadHeatmap(state.suite), api('/api/suites')]);
+  let summaryData = null;
+  let byId = modelById(data);
+  const requestedModels = (params.get('models') || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const unique = [];
+  for (const id of requestedModels) {
+    if (byId.has(id) && !unique.includes(id)) unique.push(id);
+  }
+  state.models = unique.slice(0, MAX_COMPARE_MODELS);
+  if (!state.models.length) state.models = topModelsByAverage(data, 3);
+  if (!state.models.includes(state.baseline)) state.baseline = state.models[0] || '';
+
+  clearNode(wrap);
+
+  const title = el('div', {class:'detail-header'});
+  const titleGroup = el('div', {class:'detail-title-group'});
+  const titleRow = el('div', {class:'detail-title-row'});
+  titleRow.appendChild(el('h1', null, 'Compare Models'));
+  titleGroup.appendChild(titleRow);
+  titleGroup.appendChild(el('div', {class:'detail-meta'}, 'Primary scores across selected benchmarks'));
+  title.appendChild(titleGroup);
+  wrap.appendChild(title);
+
+  const shell = el('div', {class:'compare-shell'});
+  wrap.appendChild(shell);
+
+  const toolbar = el('div', {class:'compare-toolbar'});
+  shell.appendChild(toolbar);
+
+  const controlsRow = el('div', {class:'compare-toolbar-row'});
+  toolbar.appendChild(controlsRow);
+
+  const addSelect = document.createElement('select');
+  addSelect.style.minWidth = '240px';
+  controlsRow.appendChild(addSelect);
+
+  controlsRow.appendChild(el('label', null, 'Baseline'));
+  const baselineSelect = document.createElement('select');
+  baselineSelect.style.minWidth = '180px';
+  controlsRow.appendChild(baselineSelect);
+
+  controlsRow.appendChild(el('label', null, 'Suite'));
+  const suiteSelect = document.createElement('select');
+  const allSuitesOpt = el('option', {value:''}, 'All Benchmarks');
+  suiteSelect.appendChild(allSuitesOpt);
+  for (const s of suitesData.suites || []) {
+    suiteSelect.appendChild(el('option', {value:s.suite_id}, s.display_name + ' (' + s.dataset_names.length + ')'));
+  }
+  suiteSelect.value = state.suite;
+  controlsRow.appendChild(suiteSelect);
+
+  controlsRow.appendChild(el('label', null, 'Benchmark'));
+  const benchmarkSelect = document.createElement('select');
+  benchmarkSelect.style.minWidth = '200px';
+  controlsRow.appendChild(benchmarkSelect);
+
+  const commonLabel = el('label', {style:'display:inline-flex;align-items:center;gap:6px;cursor:pointer;'});
+  const commonToggle = document.createElement('input');
+  commonToggle.type = 'checkbox';
+  commonToggle.checked = state.commonOnly;
+  commonLabel.appendChild(commonToggle);
+  commonLabel.appendChild(document.createTextNode('Shared benchmarks only'));
+  controlsRow.appendChild(commonLabel);
+  controlsRow.appendChild(addInfoIcon('Only show benchmarks where every selected model has a completed result. This avoids coverage-driven comparisons.'));
+  const sharedCount = el('span', {class:'shared-count'}, '');
+  controlsRow.appendChild(sharedCount);
+
+  controlsRow.appendChild(el('label', null, 'Scale'));
+  const scaleToggle = el('div', {class:'segmented'});
+  const normalizedBtn = el('button', {type:'button'}, 'Normalized');
+  const rawBtn = el('button', {type:'button'}, 'Raw');
+  scaleToggle.appendChild(normalizedBtn);
+  scaleToggle.appendChild(rawBtn);
+  controlsRow.appendChild(scaleToggle);
+
+  controlsRow.appendChild(el('label', null, 'Preset'));
+  const presetSelect = document.createElement('select');
+  presetSelect.style.minWidth = '170px';
+  controlsRow.appendChild(presetSelect);
+  const savePresetBtn = el('button', {class:'btn btn-secondary btn-small', type:'button'}, 'Save preset');
+  controlsRow.appendChild(savePresetBtn);
+  const reportDownloadBtn = el('button', {class:'chart-download-btn', type:'button'}, 'Report PNG');
+  controlsRow.appendChild(reportDownloadBtn);
+
+  const selectedRow = el('div', {class:'compare-toolbar-row'});
+  const selectedWrap = el('div', {class:'compare-selected'});
+  selectedRow.appendChild(selectedWrap);
+  toolbar.appendChild(selectedRow);
+
+  const summary = el('div', {class:'compare-summary'});
+  shell.appendChild(summary);
+
+  const reportExportArea = el('div', {class:'compare-report-export-area'});
+  shell.appendChild(reportExportArea);
+
+  const chartPanel = el('div', {class:'compare-chart-panel'});
+  reportExportArea.appendChild(chartPanel);
+  const chartHead = el('div', {class:'compare-chart-head'});
+  const chartTitleWrap = el('div');
+  const chartTitle = el('div', {class:'section-head', style:'margin:0;border:0;padding:0;'}, 'Benchmark Scores');
+  const chartNote = el('div', {class:'compare-note'}, '');
+  chartTitleWrap.appendChild(chartTitle);
+  chartTitleWrap.appendChild(chartNote);
+  chartHead.appendChild(chartTitleWrap);
+  const chartTools = el('div', {class:'compare-chart-tools'});
+  const modeTabs = el('div', {class:'compare-mode-tabs'});
+  const barsBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Grouped bars');
+  const deltaBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Delta bars');
+  const radarBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Radar');
+  const curvesBtn = el('button', {class:'compare-mode-btn', type:'button'}, 'Curves');
+  modeTabs.appendChild(barsBtn);
+  modeTabs.appendChild(deltaBtn);
+  modeTabs.appendChild(radarBtn);
+  modeTabs.appendChild(curvesBtn);
+  const compareDownloadBtn = el('button', {class:'chart-download-btn', type:'button'}, 'PNG');
+  const compareResetZoomBtn = el('button', {class:'zoom-reset-btn', type:'button'}, 'Reset zoom');
+  chartTools.appendChild(modeTabs);
+  chartTools.appendChild(compareResetZoomBtn);
+  chartTools.appendChild(compareDownloadBtn);
+  chartHead.appendChild(chartTools);
+  chartPanel.appendChild(chartHead);
+  const chartMount = el('div', {class:'compare-big-chart'});
+  chartPanel.appendChild(chartMount);
+
+  const tablePanel = el('div', {class:'compare-table-panel'});
+  reportExportArea.appendChild(tablePanel);
+
+  let compareChart = null;
+  const PRESET_KEY = 'eval360-compare-presets';
+  bindDownloadButton(compareDownloadBtn, () => compareChart, () => 'compare-' + state.mode + '-' + state.scale);
+  reportDownloadBtn.addEventListener('click', () => {
+    downloadReportPng(reportExportArea, 'compare-report-' + state.mode + '-' + state.scale, reportDownloadBtn);
+  });
+
+  function compareModeHasZoom() {
+    return state.mode === 'curves' || state.mode === 'radar';
+  }
+
+  function loadPresets() {
+    try {
+      const raw = localStorage.getItem(PRESET_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function savePresets(presets) {
+    try { localStorage.setItem(PRESET_KEY, JSON.stringify(presets.slice(0, 20))); } catch (e) {}
+  }
+
+  function populatePresetSelect() {
+    const presets = loadPresets();
+    clearNode(presetSelect);
+    presetSelect.appendChild(el('option', {value:''}, presets.length ? 'Load preset...' : 'No presets'));
+    presets.forEach((p, idx) => {
+      presetSelect.appendChild(el('option', {value:String(idx)}, p.name || ('Preset ' + (idx + 1))));
+    });
+  }
+
+  function destroyCompareChart() {
+    if (!compareChart) return;
+    _charts = _charts.filter(c => c !== compareChart);
+    try { compareChart.destroy(); } catch (e) {}
+    compareChart = null;
+  }
+
+  async function loadSummary() {
+    if (!state.models.length) {
+      summaryData = {models: [], datasets: [], baseline_model_id: '', matrix: {}, coverage: {}, categories: {}};
+      return summaryData;
+    }
+    const p = new URLSearchParams();
+    p.set('models', state.models.join(','));
+    if (state.baseline) p.set('baseline', state.baseline);
+    if (state.suite) p.set('suite_id', state.suite);
+    if (state.commonOnly) p.set('common_only', 'true');
+    if (state.benchmark) p.set('benchmark', state.benchmark);
+    summaryData = await api('/api/compare/summary?' + p.toString());
+    return summaryData;
+  }
+
+  function currentDatasets() {
+    return summaryData ? (summaryData.datasets || []) : [];
+  }
+
+  function tableModelOrder() {
+    if (!state.baseline) return [...state.models];
+    return [state.baseline, ...state.models.filter(mid => mid !== state.baseline)];
+  }
+
+  async function updateUrlAndRender() {
+    if (!state.models.includes(state.baseline)) state.baseline = state.models[0] || '';
+    setCompareUrl(state);
+    await renderAll();
+  }
+
+  function populateAddSelect() {
+    clearNode(addSelect);
+    const placeholder = el('option', {value:''}, state.models.length >= MAX_COMPARE_MODELS ? 'Compare list full' : 'Add model...');
+    addSelect.appendChild(placeholder);
+    for (const m of data.models || []) {
+      if (state.models.includes(m.model_id)) continue;
+      const opt = el('option', {value:m.model_id}, m.display_name + ' (' + m.model_type + ')');
+      addSelect.appendChild(opt);
+    }
+    addSelect.value = '';
+    addSelect.disabled = state.models.length >= MAX_COMPARE_MODELS;
+  }
+
+  function populateBaselineSelect() {
+    clearNode(baselineSelect);
+    for (const id of state.models) {
+      const m = byId.get(id);
+      if (!m) continue;
+      baselineSelect.appendChild(el('option', {value:id}, m.display_name));
+    }
+    baselineSelect.value = state.baseline;
+    baselineSelect.disabled = state.models.length === 0;
+  }
+
+  function populateBenchmarkSelect() {
+    const prev = state.benchmark;
+    clearNode(benchmarkSelect);
+    benchmarkSelect.appendChild(el('option', {value:''}, 'All Benchmarks'));
+    for (const ds of orderedDatasetsFromHeatmap(data)) {
+      benchmarkSelect.appendChild(el('option', {value:ds}, ds));
+    }
+    if (prev && orderedDatasetsFromHeatmap(data).includes(prev)) {
+      state.benchmark = prev;
+    } else {
+      state.benchmark = '';
+    }
+    benchmarkSelect.value = state.benchmark;
+  }
+
+  function renderSelectedChips() {
+    clearNode(selectedWrap);
+    if (!state.models.length) {
+      selectedWrap.appendChild(el('span', {style:'color:var(--muted);font-size:13px;'}, 'No models selected'));
+      return;
+    }
+    for (const id of state.models) {
+      const m = byId.get(id);
+      if (!m) continue;
+      const chip = el('span', {class:'compare-chip'});
+      chip.appendChild(el('span', {class:'compare-chip-swatch', style:'background:' + modelColor(id)}));
+      chip.appendChild(el('span', {class:'compare-chip-name'}, m.display_name));
+      if (id === state.baseline) {
+        chip.appendChild(el('span', {class:'badge', style:'background:var(--accent-dim);color:var(--accent);'}, 'baseline'));
+      }
+      const remove = el('button', {class:'compare-chip-remove', type:'button', title:'Remove'}, '\u00d7');
+      remove.addEventListener('click', () => {
+        state.models = state.models.filter(mid => mid !== id);
+        if (state.baseline === id) state.baseline = state.models[0] || '';
+        updateUrlAndRender();
+      });
+      chip.appendChild(remove);
+      selectedWrap.appendChild(chip);
+    }
+  }
+
+  function renderSummary(datasets) {
+    clearNode(summary);
+    const selectedCount = state.models.length;
+    let missing = 0;
+    let present = 0;
+    for (const mid of state.models) {
+      for (const ds of datasets) {
+        if (completedScore(summaryData, mid, ds) == null) missing++;
+        else present++;
+      }
+    }
+
+    let bestModel = null;
+    let bestAvg = null;
+    for (const mid of state.models) {
+      const avg = averageDisplayedScoreForModel(summaryData, mid, datasets, state.scale, state.models);
+      if (avg != null && (bestAvg == null || avg > bestAvg)) {
+        bestAvg = avg;
+        bestModel = byId.get(mid);
+      }
+    }
+
+    let bestGain = null;
+    if (state.baseline) {
+      for (const mid of state.models) {
+        if (mid === state.baseline) continue;
+        for (const ds of datasets) {
+          const base = displayScoreFor(summaryData, state.baseline, ds, state.scale, state.models);
+          const score = displayScoreFor(summaryData, mid, ds, state.scale, state.models);
+          if (base == null || score == null) continue;
+          const delta = score - base;
+          if (!bestGain || delta > bestGain.delta) bestGain = {delta, model: byId.get(mid), dataset: ds};
+        }
+      }
+    }
+
+    const items = [
+      [String(selectedCount), 'Selected models'],
+      [String(datasets.length), state.commonOnly ? 'Common benchmarks' : 'Benchmarks shown'],
+      [bestModel ? bestModel.display_name + ' ' + bestAvg.toFixed(3) : '\u2014', state.scale === 'normalized' ? 'Best normalized average' : 'Best raw average'],
+      [bestGain ? signed(bestGain.delta) + ' ' + bestGain.model.display_name : (missing ? String(missing) : '0'), bestGain ? 'Biggest gain' : 'Missing cells'],
+    ];
+    for (const [value, label] of items) {
+      const item = el('div', {class:'compare-stat'});
+      item.appendChild(el('div', {class:'compare-stat-value'}, value));
+      item.appendChild(el('div', {class:'compare-stat-label'}, label + (label === 'Missing cells' ? ' · ' + present + ' present' : '')));
+      summary.appendChild(item);
+    }
+  }
+
+  async function renderChart(datasets) {
+    destroyCompareChart();
+    clearNode(chartMount);
+    barsBtn.classList.toggle('active', state.mode === 'bars');
+    deltaBtn.classList.toggle('active', state.mode === 'delta');
+    radarBtn.classList.toggle('active', state.mode === 'radar');
+    curvesBtn.classList.toggle('active', state.mode === 'curves');
+    normalizedBtn.classList.toggle('active', state.scale === 'normalized');
+    rawBtn.classList.toggle('active', state.scale === 'raw');
+    compareResetZoomBtn.style.display = compareModeHasZoom() ? 'inline-flex' : 'none';
+    chartTitle.textContent = state.mode === 'delta'
+      ? 'Difference vs baseline'
+      : state.mode === 'radar'
+        ? 'Capability profile'
+        : state.mode === 'curves'
+          ? 'Training curves'
+          : 'Benchmark scores';
+    chartNote.textContent = state.mode === 'delta'
+      ? 'Positive values are above the selected baseline; negative values are below it.'
+      : state.mode === 'radar'
+        ? 'Radar shows category averages. Drag any rectangle or use the wheel to zoom; double click or Reset zoom to restore.'
+        : state.mode === 'curves'
+          ? 'Steps are most meaningful within the same training run; drag any rectangle or use the wheel to zoom, shift-drag to pan, double click or Reset zoom to restore.'
+          : (state.scale === 'normalized'
+              ? 'Normalized scores use native 0-1 ranges when possible, otherwise the current visible min/max.'
+              : 'Raw scores show the original metric values.');
+
+    if (!state.models.length || !datasets.length) {
+      chartMount.appendChild(el('div', {class:'compare-empty'}, 'No comparable benchmark data.'));
+      return;
+    }
+    if (state.mode === 'delta' && (!state.baseline || state.models.length < 2)) {
+      chartMount.appendChild(el('div', {class:'compare-empty'}, 'Select at least two models for delta bars.'));
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    chartMount.appendChild(canvas);
+    const cc = chartColors();
+
+    if (state.mode === 'delta') {
+      const chartDatasets = state.models.filter(mid => mid !== state.baseline).map(mid => {
+        const deltas = datasets.map(ds => {
+          const base = displayScoreFor(summaryData, state.baseline, ds, state.scale, state.models);
+          const score = displayScoreFor(summaryData, mid, ds, state.scale, state.models);
+          return base == null || score == null ? null : score - base;
+        });
+        const rawDeltas = datasets.map(ds => {
+          const base = completedScore(summaryData, state.baseline, ds);
+          const score = completedScore(summaryData, mid, ds);
+          return base == null || score == null ? null : score - base;
+        });
+        return {
+          label: byId.get(mid)?.display_name || mid,
+          _modelId: mid,
+          _rawDeltas: rawDeltas,
+          data: deltas,
+          backgroundColor: deltas.map(v => v == null ? 'rgba(128,128,128,0.22)' : (v >= 0 ? cc.green + 'aa' : cc.red + 'aa')),
+          borderColor: deltas.map(v => v == null ? 'rgba(128,128,128,0.4)' : (v >= 0 ? cc.green : cc.red)),
+          borderWidth: 1,
+        };
+      });
+      compareChart = new Chart(canvas, {
+        type: 'bar',
+        data: {labels: datasets, datasets: chartDatasets},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: {mode:'index', intersect:false},
+          scales: {
+            x: {ticks:{color:cc.tick, maxRotation:45, minRotation:0, font:{size:11}}, grid:{display:false}},
+            y: {ticks:{color:cc.tick, font:{size:11,family:'JetBrains Mono'}, callback:v => signed(v)}, grid:{color:cc.grid}, zeroLineColor:cc.grid},
+          },
+          plugins: {
+            legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
+            tooltip: {
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
+              callbacks: {
+                label(ctx) {
+                  if (ctx.raw == null) return ctx.dataset.label + ': missing';
+                  const rawDelta = ctx.dataset._rawDeltas?.[ctx.dataIndex];
+                  const suffix = state.scale === 'normalized' && rawDelta != null ? ' · raw ' + signed(rawDelta) : '';
+                  return ctx.dataset.label + ': ' + signed(ctx.raw) + suffix;
+                },
+              },
+            },
+          },
+        },
+      });
+      compareChart.$compareDeltaValues = chartDatasets.map(d => d.data);
+    } else if (state.mode === 'radar') {
+      const axes = [];
+      const categories = summaryData.categories || {};
+      const catNames = Object.keys(categories).sort();
+      if (catNames.length) {
+        for (const cat of catNames) {
+          const catDs = (categories[cat] || []).filter(ds => datasets.includes(ds));
+          if (catDs.length) axes.push({label: cat, datasets: catDs});
+        }
+      }
+      if (!axes.length) {
+        for (const ds of datasets.slice(0, 12)) axes.push({label: ds, datasets: [ds]});
+      }
+      const chartDatasets = state.models.map(mid => {
+        const color = modelColor(mid);
+        return {
+          label: byId.get(mid)?.display_name || mid,
+          data: axes.map(axis => averageDisplayedScoreForModel(summaryData, mid, axis.datasets, state.scale, state.models)),
+          borderColor: color,
+          backgroundColor: color + '22',
+          pointBackgroundColor: color,
+          pointBorderColor: color,
+          borderWidth: 2,
+        };
+      });
+      const radarVals = chartDatasets.flatMap(ds => ds.data).filter(v => v != null);
+      const radarMin = radarVals.length ? Math.max(0, Math.floor((Math.min(...radarVals) - 0.08) * 10) / 10) : 0;
+      const radarMax = state.scale === 'normalized'
+        ? 1
+        : (radarVals.length ? Math.ceil((Math.max(...radarVals) + 0.08) * 10) / 10 : 1);
+      if (radarMin > 0) chartNote.textContent += ' Axis starts at ' + radarMin.toFixed(1) + ' to reduce center crowding.';
+      compareChart = new Chart(canvas, {
+        type: 'radar',
+        data: {labels: axes.map(a => a.label), datasets: chartDatasets},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            r: {
+              min: radarMin, max: radarMax,
+              angleLines: {color: cc.grid},
+              grid: {color: cc.grid},
+              pointLabels: {color: cc.tick, font: {size: 11}},
+              ticks: {color: cc.tick, backdropColor: 'transparent', font: {size: 10, family:'JetBrains Mono'}},
+            },
+          },
+          plugins: {
+            legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
+            tooltip: {
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
+              callbacks: { label(ctx) { return ctx.dataset.label + ': ' + (ctx.raw == null ? 'missing' : formatScore(ctx.raw)) + (state.scale === 'normalized' ? ' normalized' : ' raw'); } },
+            },
+            zoom: zoomPluginOptions(),
+          },
+        },
+      });
+    } else if (state.mode === 'curves') {
+      const curveDs = state.benchmark || datasets[0];
+      chartTitle.textContent = 'Training Curves · ' + curveDs;
+      const compareModels = state.models.join(',');
+      const cData = await api('/api/compare?models=' + encodeURIComponent(compareModels) + '&dataset=' + encodeURIComponent(curveDs));
+      const allSteps = [];
+      for (const mEntry of cData.models || []) {
+        for (const p of mEntry.data_points || []) {
+          if (p.training_step != null) allSteps.push(p.training_step);
+        }
+      }
+      const xMin = allSteps.length ? Math.min(...allSteps) : 0;
+      const xMax = allSteps.length ? Math.max(...allSteps) : 1;
+      const chartDatasets = (cData.models || []).map(mEntry => {
+        const color = modelColor(mEntry.model_id);
+        if (mEntry.model_type === 'baseline' && mEntry.data_points.length > 0) {
+          const val = mEntry.data_points[0].metric_value;
+          return {
+            label: mEntry.display_name,
+            data: [{x:xMin, y:val}, {x:xMax, y:val}],
+            borderColor: color,
+            backgroundColor: color + '22',
+            borderDash: [6, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0,
+          };
+        }
+        return {
+          label: mEntry.display_name,
+          data: (mEntry.data_points || []).map(p => ({x: p.training_step ?? xMin, y: p.metric_value})),
+          borderColor: color,
+          backgroundColor: color + '22',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          tension: 0.25,
+        };
+      });
+      compareChart = new Chart(canvas, {
+        type: 'line',
+        data: {datasets: chartDatasets},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: {mode:'index', intersect:false},
+          scales: {
+            x: {type:'linear', ticks:{color:cc.tick, maxTicksLimit:6, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid}},
+            y: {min:0, max:1, ticks:{color:cc.tick, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid}},
+          },
+          plugins: {
+            legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
+            tooltip: {
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
+              callbacks: { label(ctx) { const r = ctx.raw; return ctx.dataset.label + ': ' + formatScore(r.y) + (r.x != null ? ' (step ' + r.x + ')' : ''); } },
+            },
+            zoom: zoomPluginOptions(),
+          },
+        },
+      });
+    } else {
+      const chartDatasets = state.models.map(mid => {
+        const color = modelColor(mid);
+        const rawValues = datasets.map(ds => completedScore(summaryData, mid, ds));
+        return {
+          label: byId.get(mid)?.display_name || mid,
+          _rawValues: rawValues,
+          data: datasets.map(ds => displayScoreFor(summaryData, mid, ds, state.scale, state.models)),
+          backgroundColor: color + 'aa',
+          borderColor: color,
+          borderWidth: 1,
+          borderRadius: 3,
+        };
+      });
+      const barVals = chartDatasets.flatMap(ds => ds.data).filter(v => v != null);
+      const yMax = state.scale === 'normalized'
+        ? 1
+        : (barVals.length ? Math.ceil((Math.max(...barVals) + 0.05) * 10) / 10 : 1);
+      compareChart = new Chart(canvas, {
+        type: 'bar',
+        data: {labels: datasets, datasets: chartDatasets},
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: {mode:'index', intersect:false},
+          scales: {
+            x: {ticks:{color:cc.tick, maxRotation:45, minRotation:0, font:{size:11}}, grid:{display:false}},
+            y: {min:0, max:yMax, ticks:{color:cc.tick, font:{size:11,family:'JetBrains Mono'}}, grid:{color:cc.grid}},
+          },
+          plugins: {
+            legend: {labels:{color:cc.legend, boxWidth:10, font:{size:11}}},
+            tooltip: {
+              backgroundColor:cc.tooltipBg, borderColor:cc.tooltipBorder, borderWidth:1, titleColor:cc.tooltipTitle, bodyColor:cc.tooltipBody,
+              callbacks: {
+                label(ctx) {
+                  if (ctx.raw == null) return ctx.dataset.label + ': missing';
+                  const raw = ctx.dataset._rawValues?.[ctx.dataIndex];
+                  const suffix = state.scale === 'normalized' && raw != null ? ' · raw ' + formatScore(raw) : '';
+                  return ctx.dataset.label + ': ' + formatScore(ctx.raw) + suffix;
+                },
+              },
+            },
+          },
+        },
+      });
+    }
+    if (compareModeHasZoom()) {
+      canvas.addEventListener('dblclick', () => resetChartZoom(compareChart));
+    }
+    _charts.push(compareChart);
+  }
+
+  function renderTable(datasets) {
+    clearNode(tablePanel);
+    if (!state.models.length || !datasets.length) {
+      tablePanel.appendChild(el('div', {class:'compare-empty'}, 'No comparable benchmark data.'));
+      return;
+    }
+    const modelOrder = tableModelOrder();
+    const table = document.createElement('table');
+    table.className = 'compare-table';
+    const thead = document.createElement('thead');
+    const hrow = document.createElement('tr');
+    hrow.appendChild(el('th', null, 'Benchmark'));
+    hrow.appendChild(el('th', null, 'Coverage'));
+    for (const mid of modelOrder) {
+      const label = (byId.get(mid)?.display_name || mid) + (mid === state.baseline ? ' · Baseline' : '');
+      hrow.appendChild(el('th', null, label));
+    }
+    thead.appendChild(hrow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const ds of datasets) {
+      const tr = document.createElement('tr');
+      tr.appendChild(el('td', null, ds));
+      const present = state.models.filter(mid => completedScore(summaryData, mid, ds) != null).length;
+      tr.appendChild(el('td', {style:'color:var(--muted);font-family:var(--font-mono);'}, present + '/' + state.models.length));
+      const base = state.baseline ? displayScoreFor(summaryData, state.baseline, ds, state.scale, state.models) : null;
+      for (const mid of modelOrder) {
+        const td = document.createElement('td');
+        const raw = completedScore(summaryData, mid, ds);
+        const v = displayScoreFor(summaryData, mid, ds, state.scale, state.models);
+        if (v == null) {
+          td.appendChild(el('span', {class:'compare-missing'}, '\u2014'));
+        } else {
+          const score = el('span', {class:'compare-score'}, formatScore(v));
+          score.style.color = scoreColor(v);
+          td.appendChild(score);
+          if (state.scale === 'normalized' && raw != null) {
+            td.appendChild(el('span', {class:'compare-raw-score'}, 'raw ' + formatScore(raw)));
+          }
+          if (mid !== state.baseline && base != null) {
+            const delta = v - base;
+            const deltaSpan = el('span', {class:'compare-delta ' + (delta >= 0 ? 'gap-positive' : 'gap-negative')}, signed(delta));
+            td.appendChild(deltaSpan);
+          }
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    tablePanel.appendChild(table);
+  }
+
+  async function renderAll() {
+    byId = modelById(data);
+    state.models = state.models.filter(id => byId.has(id)).slice(0, MAX_COMPARE_MODELS);
+    if (!state.models.includes(state.baseline)) state.baseline = state.models[0] || '';
+    populateAddSelect();
+    populateBaselineSelect();
+    populateBenchmarkSelect();
+    commonToggle.checked = state.commonOnly;
+    normalizedBtn.classList.toggle('active', state.scale === 'normalized');
+    rawBtn.classList.toggle('active', state.scale === 'raw');
+    suiteSelect.value = state.suite;
+    setCompareUrl(state);
+    await loadSummary();
+    renderSelectedChips();
+    const datasets = currentDatasets();
+    const shared = sharedDatasetStats(data, state.models, state.benchmark);
+    sharedCount.textContent = state.models.length > 1 ? shared.shared + '/' + shared.total + ' shared' : '';
+    renderSummary(datasets);
+    await renderChart(datasets);
+    renderTable(datasets);
+  }
+
+  addSelect.addEventListener('change', async () => {
+    const id = addSelect.value;
+    if (!id || state.models.includes(id) || state.models.length >= MAX_COMPARE_MODELS) return;
+    state.models.push(id);
+    if (!state.baseline) state.baseline = id;
+    await updateUrlAndRender();
+  });
+
+  baselineSelect.addEventListener('change', async () => {
+    state.baseline = baselineSelect.value;
+    await updateUrlAndRender();
+  });
+
+  suiteSelect.addEventListener('change', async () => {
+    state.suite = suiteSelect.value;
+    data = await loadHeatmap(state.suite);
+    await updateUrlAndRender();
+  });
+
+  benchmarkSelect.addEventListener('change', async () => {
+    state.benchmark = benchmarkSelect.value;
+    await updateUrlAndRender();
+  });
+
+  commonToggle.addEventListener('change', async () => {
+    state.commonOnly = commonToggle.checked;
+    await updateUrlAndRender();
+  });
+
+  normalizedBtn.addEventListener('click', async () => {
+    state.scale = 'normalized';
+    await updateUrlAndRender();
+  });
+
+  rawBtn.addEventListener('click', async () => {
+    state.scale = 'raw';
+    await updateUrlAndRender();
+  });
+
+  compareResetZoomBtn.addEventListener('click', () => resetChartZoom(compareChart));
+
+  barsBtn.addEventListener('click', async () => {
+    state.mode = 'bars';
+    await updateUrlAndRender();
+  });
+
+  deltaBtn.addEventListener('click', async () => {
+    state.mode = 'delta';
+    await updateUrlAndRender();
+  });
+
+  radarBtn.addEventListener('click', async () => {
+    state.mode = 'radar';
+    await updateUrlAndRender();
+  });
+
+  curvesBtn.addEventListener('click', async () => {
+    state.mode = 'curves';
+    await updateUrlAndRender();
+  });
+
+  savePresetBtn.addEventListener('click', () => {
+    const name = prompt('Preset name:', state.models.map(id => byId.get(id)?.display_name || id).join(' vs '));
+    if (!name) return;
+    const presets = loadPresets().filter(p => p.name !== name);
+    presets.unshift({
+      name,
+      state: {
+        models: [...state.models],
+        baseline: state.baseline,
+        suite: state.suite,
+        commonOnly: state.commonOnly,
+        benchmark: state.benchmark,
+        mode: state.mode,
+        scale: state.scale,
+      },
+      saved_at: new Date().toISOString(),
+    });
+    savePresets(presets);
+    populatePresetSelect();
+  });
+
+  presetSelect.addEventListener('change', async () => {
+    const idx = Number(presetSelect.value);
+    const preset = loadPresets()[idx];
+    if (!preset || !preset.state) return;
+    state.models = [...(preset.state.models || [])].slice(0, MAX_COMPARE_MODELS);
+    state.baseline = preset.state.baseline || state.models[0] || '';
+    state.suite = preset.state.suite || '';
+    state.commonOnly = !!preset.state.commonOnly;
+    state.benchmark = preset.state.benchmark || '';
+    state.mode = preset.state.mode || 'bars';
+    state.scale = preset.state.scale === 'raw' ? 'raw' : 'normalized';
+    data = await loadHeatmap(state.suite);
+    await updateUrlAndRender();
+  });
+
+  populatePresetSelect();
+  setCompareUrl(state);
+  await renderAll();
 }
 
 /* ===================================================================
@@ -2340,6 +4112,49 @@ async function viewLeaderboard(app) {
   wrap.appendChild(tableContainer);
 
   let currentData = initialData;
+  const selectedCompare = new Set();
+
+  const compareTray = el('div', {class:'compare-tray'});
+  const trayCount = el('span', {class:'compare-tray-count'}, '0 selected');
+  const trayMeta = el('span', {style:'color:var(--muted);font-size:12px;'}, 'Ready to compare');
+  const trayCompareBtn = el('button', {class:'btn btn-small'}, 'Compare selected');
+  const trayClearBtn = el('button', {class:'btn btn-secondary btn-small'}, 'Clear');
+  compareTray.appendChild(trayCount);
+  compareTray.appendChild(trayMeta);
+  compareTray.appendChild(trayCompareBtn);
+  compareTray.appendChild(trayClearBtn);
+  wrap.appendChild(compareTray);
+
+  function selectedIdsInCurrentOrder() {
+    return (currentData.models || []).map(m => m.model_id).filter(id => selectedCompare.has(id));
+  }
+
+  function updateCompareTray() {
+    const ids = selectedIdsInCurrentOrder();
+    trayCount.textContent = ids.length + ' selected';
+    trayMeta.textContent = ids.length >= MAX_COMPARE_MODELS ? 'Compare list full' : 'Up to ' + MAX_COMPARE_MODELS + ' models';
+    compareTray.classList.toggle('visible', ids.length > 0);
+  }
+
+  trayCompareBtn.addEventListener('click', () => {
+    const ids = selectedIdsInCurrentOrder();
+    if (!ids.length) return;
+    const state = {
+      models: ids,
+      baseline: ids[0],
+      suite: lbSuiteSelect.value,
+      commonOnly: false,
+      benchmark: sortSelect.value,
+      mode: 'bars',
+    };
+    location.hash = buildCompareHash(state);
+  });
+
+  trayClearBtn.addEventListener('click', () => {
+    selectedCompare.clear();
+    renderPivot(currentData, sortSelect.value);
+    updateCompareTray();
+  });
 
   function populateSortSelect(data) {
     clearNode(sortSelect);
@@ -2391,6 +4206,19 @@ async function viewLeaderboard(app) {
       bestPerDs[ds] = best;
     }
 
+    // Sort models
+    let sorted = [...data.models];
+    if (sortDs) {
+      sorted.sort((a, b) => {
+        const entryA = (data.matrix[a.model_id] || {})[sortDs];
+        const entryB = (data.matrix[b.model_id] || {})[sortDs];
+        const va = entryA && entryA.score != null ? entryA.score : -1;
+        const vb = entryB && entryB.score != null ? entryB.score : -1;
+        return vb - va;
+      });
+    }
+    const visibleIds = sorted.map(m => m.model_id);
+
     const pivotWrap = el('div', {class:'pivot-wrap'});
     const table = document.createElement('table');
     table.className = 'pivot';
@@ -2402,7 +4230,7 @@ async function viewLeaderboard(app) {
       const catRow = document.createElement('tr');
       catRow.className = 'type-separator';
       const catModelTd = document.createElement('td');
-      catModelTd.colSpan = 2;
+      catModelTd.colSpan = 3;
       catRow.appendChild(catModelTd);
       for (const cat of catOrder) {
         const catTd = document.createElement('td');
@@ -2420,6 +4248,27 @@ async function viewLeaderboard(app) {
     }
 
     const hRow = document.createElement('tr');
+    const selectAllTh = el('th', {class:'compare-select-cell'});
+    const selectAll = document.createElement('input');
+    selectAll.type = 'checkbox';
+    selectAll.className = 'model-compare-check';
+    const visibleSelected = visibleIds.filter(id => selectedCompare.has(id));
+    selectAll.checked = visibleIds.length > 0 && visibleSelected.length === visibleIds.length;
+    selectAll.indeterminate = visibleSelected.length > 0 && visibleSelected.length < visibleIds.length;
+    selectAll.addEventListener('change', () => {
+      if (selectAll.checked) {
+        for (const id of visibleIds) {
+          if (selectedCompare.size >= MAX_COMPARE_MODELS) break;
+          selectedCompare.add(id);
+        }
+      } else {
+        for (const id of visibleIds) selectedCompare.delete(id);
+      }
+      renderPivot(data, sortDs);
+      updateCompareTray();
+    });
+    selectAllTh.appendChild(selectAll);
+    hRow.appendChild(selectAllTh);
     hRow.appendChild(el('th', {style:'text-align:left'}, 'Model'));
     hRow.appendChild(el('th', null, 'Type'));
     for (const ds of orderedDatasets) {
@@ -2430,21 +4279,26 @@ async function viewLeaderboard(app) {
     thead.appendChild(hRow);
     table.appendChild(thead);
 
-    // Sort models
-    let sorted = [...data.models];
-    if (sortDs) {
-      sorted.sort((a, b) => {
-        const entryA = (data.matrix[a.model_id] || {})[sortDs];
-        const entryB = (data.matrix[b.model_id] || {})[sortDs];
-        const va = entryA && entryA.score != null ? entryA.score : -1;
-        const vb = entryB && entryB.score != null ? entryB.score : -1;
-        return vb - va;
-      });
-    }
-
     const tbody = document.createElement('tbody');
     for (const m of sorted) {
       const tr = document.createElement('tr');
+      if (selectedCompare.has(m.model_id)) tr.classList.add('compare-selected-row');
+
+      const selectTd = el('td', {class:'compare-select-cell'});
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.className = 'model-compare-check';
+      check.checked = selectedCompare.has(m.model_id);
+      check.disabled = !check.checked && selectedCompare.size >= MAX_COMPARE_MODELS;
+      check.addEventListener('click', e => e.stopPropagation());
+      check.addEventListener('change', () => {
+        if (check.checked) selectedCompare.add(m.model_id);
+        else selectedCompare.delete(m.model_id);
+        renderPivot(data, sortDs);
+        updateCompareTray();
+      });
+      selectTd.appendChild(check);
+      tr.appendChild(selectTd);
 
       const nameTd = document.createElement('td');
       nameTd.className = 'model-col';
@@ -2472,6 +4326,7 @@ async function viewLeaderboard(app) {
     table.appendChild(tbody);
     pivotWrap.appendChild(table);
     tableContainer.appendChild(pivotWrap);
+    updateCompareTray();
   }
 
   populateSortSelect(initialData);
